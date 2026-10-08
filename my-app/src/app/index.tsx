@@ -229,11 +229,11 @@ export default function Index() {
               glassTint={isDark ? "#343438" : "#F2F2F5"}
             />
             <View pointerEvents="box-none" style={styles.toolbarActions}>
-              {hasContent && (
+              {hasContent && !isOrganizing && (
                 <GlassTextButton
-                  title={isOrganizing ? "편집" : "완료"}
+                  title="완료"
                   glassTint={isDark ? "#343438" : "#F2F2F5"}
-                  onPress={isOrganizing ? resumeEditing : finishEditing}
+                  onPress={finishEditing}
                 />
               )}
               <GlassButton
@@ -264,6 +264,15 @@ export default function Index() {
               isDark && isOrganizing && hasContent && styles.darkOrganizingCard,
             ]}
           >
+            {isOrganizing && hasContent && (
+              <View style={styles.cardHeader}>
+                <GlassTextButton
+                  title="편집"
+                  glassTint={isDark ? "#343438" : "#F2F2F5"}
+                  onPress={resumeEditing}
+                />
+              </View>
+            )}
             <NativeTextInput
               ref={inputRef}
               accessibilityLabel="메모 내용"
@@ -390,5 +399,9 @@ const styles = StyleSheet.create({
   },
   darkOrganizingCard: {
     borderColor: "#4A4A4D",
+  },
+  cardHeader: {
+    alignItems: "flex-end",
+    marginBottom: 8,
   },
 });
