@@ -1,9 +1,11 @@
 ### Liquid Glass 버튼
 
 - iOS 26에서는 `@expo/ui`의 SwiftUI `Button`에 시스템 `glass` 스타일을 적용한다. Liquid Glass를 사용할 수 없는 환경에서는 `expo-glass-effect`의 `GlassView`를 대체 표면으로 사용한다.
+- 대체 표면은 `regular` 재질과 인터랙티브 효과를 사용하고, 그 위의 SwiftUI 버튼은 `plain` 스타일로 둔다. 지원 여부와 관계없이 SwiftUI 버튼과 React Native 래퍼의 프레임을 일치시킨다.
 - 햄버거와 캐밥 아이콘 버튼은 원형이며, React Native 래퍼와 SwiftUI 버튼의 레이아웃 프레임을 각각 60×60pt로 둔다. 두 버튼은 `controlSize("large")`를 공유한다.
 - 아이콘은 SF Symbol 22pt이고, SwiftUI 라벨 프레임은 20×20pt다. 아이콘 라벨 프레임과 버튼 스타일이 표면의 실제 표시 크기에 영향을 준다.
-- 완료·편집 버튼은 캡슐형으로, SwiftUI 프레임과 React Native 레이아웃 크기는 72×60pt다. 라벨은 17pt 세미볼드다.
+- 완료·편집 버튼은 캡슐형으로, SwiftUI 프레임과 React Native 레이아웃 크기는 72×60pt다. 라벨은 강조색 17pt 세미볼드다.
+- 버튼 표면 틴트는 라이트 모드에서 `#F2F2F5`, 다크 모드에서 `#343438`을 사용한다. 툴바 액션 버튼 사이 간격은 10pt다.
 - 지원되는 네이티브 Liquid Glass 표면에는 별도의 그림자·배경·테두리를 겹치지 않고 시스템 재질과 눌림 효과를 따른다.
 - 상단 툴바는 최소 높이 60pt로 화면에 고정하고, 메모 본문만 스크롤한다.
 

@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import {
+  Keyboard,
   Platform,
   ScrollView,
   StatusBar,
@@ -8,7 +9,6 @@ import {
   TextInput as NativeTextInput,
   View,
   useColorScheme,
-  useWindowDimensions,
 } from "react-native";
 import { Stack } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -32,8 +32,20 @@ const NOTE_LINE_HEIGHT = 35;
 const PLACEHOLDER =
   "떠오른 생각\n\n기록은 가볍게,\n정리는 나중에.\n\n지금 생각난 것을 먼저 적어두기.";
 
-function getMinimumNoteHeight(text: string) {
-  return Math.max(1, text.split("\n").length) * NOTE_LINE_HEIGHT;
+type Note = {
+  id: number;
+  text: string;
+  timestamp: number;
+};
+
+function formatTimestamp(timestamp: number) {
+  return new Date(timestamp).toLocaleString("ko-KR", {
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }
 
 function GlassButton({
@@ -112,15 +124,19 @@ function GlassTextButton({
   title,
   glassTint,
   onPress,
+  width = TEXT_BUTTON_WIDTH,
+  height = BUTTON_HEIGHT,
 }: {
   title: string;
   glassTint: string;
   onPress: () => void;
+  width?: number;
+  height?: number;
 }) {
   const usesNativeGlass = Platform.OS === "ios" && isLiquidGlassAvailable();
 
   return (
-    <View style={[styles.glassButton, styles.doneButton]}>
+    <View style={[styles.glassButton, styles.doneButton, { width, height }]}>
       {!usesNativeGlass && (
         <GlassView
           pointerEvents="none"
@@ -144,10 +160,10 @@ function GlassTextButton({
           modifiers={[
             buttonStyle(usesNativeGlass ? "glass" : "plain"),
             buttonBorderShape("capsule"),
-            frame({ width: TEXT_BUTTON_WIDTH, height: BUTTON_HEIGHT }),
-            controlSize("large"),
+            frame({ width, height }),
+            controlSize(height < BUTTON_HEIGHT ? "regular" : "large"),
           ]}
-          style={styles.doneNativeButton}
+          style={{ ...styles.doneNativeButton, width, height }}
         >
           <Text textStyle={{ fontSize: 17, fontWeight: "600", color: ACCENT }}>
             {title}
@@ -160,66 +176,61 @@ function GlassTextButton({
 
 export default function Index() {
   const insets = useSafeAreaInsets();
-  const { width: windowWidth } = useWindowDimensions();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
   const inputRef = useRef<InstanceType<typeof NativeTextInput>>(null);
-  const noteTextRef = useRef("");
-  const createdAtRef = useRef<number | undefined>(undefined);
-  const modifiedAtRef = useRef<number | undefined>(undefined);
-  const editorHeightRef = useRef<number | undefined>(undefined);
+  const editInputRef = useRef<InstanceType<typeof NativeTextInput>>(null);
+  const nextNoteId = useRef(0);
+  const [notes, setNotes] = useState<Note[]>([]);
   const [noteText, setNoteText] = useState("");
-  const [noteTimestamp, setNoteTimestamp] = useState<number | undefined>(undefined);
-  const [isOrganizing, setIsOrganizing] = useState(false);
-  const [editorHeight, setEditorHeight] = useState<number | undefined>(undefined);
+  const [noteTimestamp, setNoteTimestamp] = useState<number | undefined>();
+  const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
+  const [editingText, setEditingText] = useState("");
+  const [editingTimestamp, setEditingTimestamp] = useState<number>(0);
+  const isEditingCard = editingNoteId !== null;
   const hasContent = noteText.trim().length > 0;
 
-  const updateEditorHeight = (height: number | undefined) => {
-    editorHeightRef.current = height;
-    setEditorHeight(height);
-  };
-
   const handleTextChange = (text: string) => {
-    const nextHasContent = text.trim().length > 0;
-    const wasEmpty = noteTextRef.current.trim().length === 0;
-    noteTextRef.current = text;
     setNoteText(text);
-
-    if (!nextHasContent) {
-      createdAtRef.current = undefined;
-      modifiedAtRef.current = undefined;
-      setNoteTimestamp(undefined);
-      updateEditorHeight(undefined);
-      return;
-    }
-
-    const now = Date.now();
-    if (wasEmpty) {
-      createdAtRef.current = now;
-    }
-    modifiedAtRef.current = now;
-    setNoteTimestamp(
-      Math.max(createdAtRef.current ?? now, modifiedAtRef.current),
-    );
-
-    const measuredHeight = wasEmpty ? 0 : (editorHeightRef.current ?? 0);
-    updateEditorHeight(Math.max(measuredHeight, getMinimumNoteHeight(text)));
+    setNoteTimestamp(text.trim().length > 0 ? Date.now() : undefined);
   };
 
   const finishEditing = () => {
-    updateEditorHeight(
-      Math.max(
-        editorHeightRef.current ?? 0,
-        getMinimumNoteHeight(noteTextRef.current),
-      ),
-    );
+    if (editingNoteId !== null) {
+      setNotes((current) => current.map((note) =>
+        note.id === editingNoteId
+          ? { ...note, text: editingText, timestamp: editingTimestamp }
+          : note,
+      ));
+      setEditingNoteId(null);
+    } else {
+      if (!hasContent) return;
+      const note: Note = {
+        id: nextNoteId.current++,
+        text: noteText,
+        timestamp: noteTimestamp ?? Date.now(),
+      };
+      setNotes((current) => [...current, note]);
+      setNoteText("");
+      setNoteTimestamp(undefined);
+    }
     inputRef.current?.blur();
-    setIsOrganizing(true);
+    editInputRef.current?.blur();
+    Keyboard.dismiss();
   };
 
-  const resumeEditing = () => {
-    setIsOrganizing(false);
-    requestAnimationFrame(() => inputRef.current?.focus());
+  const resumeEditing = (note: Note) => {
+    inputRef.current?.blur();
+    if (editingNoteId !== null) {
+      setNotes((current) => current.map((item) =>
+        item.id === editingNoteId
+          ? { ...item, text: editingText, timestamp: editingTimestamp }
+          : item,
+      ));
+    }
+    setEditingNoteId(note.id);
+    setEditingText(note.text);
+    setEditingTimestamp(note.timestamp);
   };
 
   return (
@@ -244,7 +255,7 @@ export default function Index() {
               glassTint={isDark ? "#343438" : "#F2F2F5"}
             />
             <View pointerEvents="box-none" style={styles.toolbarActions}>
-              {hasContent && !isOrganizing && (
+              {hasContent && !isEditingCard && (
                 <GlassTextButton
                   title="완료"
                   glassTint={isDark ? "#343438" : "#F2F2F5"}
@@ -265,21 +276,22 @@ export default function Index() {
           style={styles.scrollArea}
           contentInsetAdjustmentBehavior="never"
           keyboardShouldPersistTaps="handled"
+          automaticallyAdjustKeyboardInsets
           contentContainerStyle={{
             flexGrow: 1,
             paddingTop: insets.top + 12 + BUTTON_HEIGHT,
             paddingBottom: Math.max(insets.bottom, 18),
           }}
         >
-          <View
-            style={[
-              styles.editorCard,
-              !isOrganizing && styles.editingCard,
-              isOrganizing && hasContent && styles.organizingCard,
-              isDark && isOrganizing && hasContent && styles.darkOrganizingCard,
-            ]}
-          >
-            {isOrganizing && hasContent && (
+          {notes.map((note) => (
+            <View
+              key={note.id}
+              style={[
+                styles.editorCard,
+                styles.organizingCard,
+                isDark && styles.darkOrganizingCard,
+              ]}
+            >
               <View style={styles.cardHeader}>
                 <NativeText
                   accessibilityLabel="메모 작성 또는 수정 시간"
@@ -288,29 +300,57 @@ export default function Index() {
                     { color: isDark ? "#A1A1A6" : "#77777C" },
                   ]}
                 >
-                  {noteTimestamp === undefined
-                    ? ""
-                    : new Date(noteTimestamp).toLocaleString("ko-KR", {
-                        year: "numeric",
-                        month: "numeric",
-                        day: "numeric",
-                        hour: "numeric",
-                        minute: "2-digit",
-                      })}
+                  {formatTimestamp(note.timestamp)}
                 </NativeText>
                 <GlassTextButton
-                  title="편집"
+                  title={editingNoteId === note.id ? "완료" : "편집"}
+                  width={68}
+                  height={52}
                   glassTint={isDark ? "#343438" : "#F2F2F5"}
-                  onPress={resumeEditing}
+                  onPress={() => {
+                    if (editingNoteId === note.id) finishEditing();
+                    else resumeEditing(note);
+                  }}
                 />
               </View>
-            )}
+              {editingNoteId === note.id ? (
+                <NativeTextInput
+                  ref={editInputRef}
+                  accessibilityLabel="메모 내용 편집"
+                  autoFocus
+                  multiline
+                  value={editingText}
+                  onChangeText={(text) => {
+                    setEditingText(text);
+                    setEditingTimestamp(Date.now());
+                  }}
+                  scrollEnabled={false}
+                  selectionColor={ACCENT}
+                  style={[
+                    styles.editorInput,
+                    { color: isDark ? "#F5F5F2" : "#171717" },
+                  ]}
+                />
+              ) : (
+                <NativeText
+                  selectable
+                  style={[
+                    styles.editorInput,
+                    { color: isDark ? "#F5F5F2" : "#171717" },
+                  ]}
+                >
+                  {note.text}
+                </NativeText>
+              )}
+            </View>
+          ))}
+          <View style={[styles.editorCard, styles.editingCard]}>
             <NativeTextInput
               ref={inputRef}
-              accessibilityLabel="메모 내용"
+              accessibilityLabel="새 메모 내용"
               accessibilityHint="떠오른 생각을 자유롭게 입력하세요"
               autoFocus
-              editable={!isOrganizing}
+              editable={!isEditingCard}
               multiline
               onChangeText={handleTextChange}
               value={noteText}
@@ -320,27 +360,10 @@ export default function Index() {
               selectionColor={ACCENT}
               style={[
                 styles.editorInput,
-                {
-                  color: isDark ? "#F5F5F2" : "#171717",
-                  height: isOrganizing ? editorHeight : undefined,
-                },
+                styles.newNoteInput,
+                { color: isDark ? "#F5F5F2" : "#171717" },
               ]}
             />
-            {hasContent && (
-              <NativeText
-                accessible={false}
-                pointerEvents="none"
-                onLayout={(event) => {
-                  updateEditorHeight(event.nativeEvent.layout.height);
-                }}
-                style={[
-                  styles.measureText,
-                  { width: Math.max(1, windowWidth - 82) },
-                ]}
-              >
-                {noteText}
-              </NativeText>
-            )}
           </View>
         </ScrollView>
       </View>
@@ -411,14 +434,8 @@ const styles = StyleSheet.create({
     lineHeight: NOTE_LINE_HEIGHT,
     textAlignVertical: "top",
   },
-  measureText: {
-    position: "absolute",
-    top: -10000,
-    left: 15,
-    opacity: 0,
-    fontSize: NOTE_FONT_SIZE,
-    lineHeight: NOTE_LINE_HEIGHT,
-    padding: 0,
+  newNoteInput: {
+    minHeight: 280,
   },
   organizingCard: {
     marginTop: 24,
