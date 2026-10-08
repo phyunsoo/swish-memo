@@ -95,7 +95,8 @@ function DraggableRow({ note, drag, nativeScroll, rootRef, wheelSize, disabled, 
       cancelAnimation(drag.previewScaleX);
       cancelAnimation(drag.previewScaleY);
       drag.previewOpacity.set(withTiming(0, FADE));
-      drag.wheel.opacity.set(withTiming(0, FADE));
+      cancelAnimation(drag.wheel.opacity);
+      drag.wheel.opacity.set(0);
       drag.cardOpacity.set(withTiming(1, FADE, (finished) => {
         if (finished) {
           drag.active.set(-1);
