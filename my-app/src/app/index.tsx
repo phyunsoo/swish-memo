@@ -165,8 +165,11 @@ export default function Index() {
   const isDark = colorScheme === "dark";
   const inputRef = useRef<InstanceType<typeof NativeTextInput>>(null);
   const noteTextRef = useRef("");
+  const createdAtRef = useRef<number | undefined>(undefined);
+  const modifiedAtRef = useRef<number | undefined>(undefined);
   const editorHeightRef = useRef<number | undefined>(undefined);
   const [noteText, setNoteText] = useState("");
+  const [noteTimestamp, setNoteTimestamp] = useState<number | undefined>(undefined);
   const [isOrganizing, setIsOrganizing] = useState(false);
   const [editorHeight, setEditorHeight] = useState<number | undefined>(undefined);
   const hasContent = noteText.trim().length > 0;
@@ -183,9 +186,21 @@ export default function Index() {
     setNoteText(text);
 
     if (!nextHasContent) {
+      createdAtRef.current = undefined;
+      modifiedAtRef.current = undefined;
+      setNoteTimestamp(undefined);
       updateEditorHeight(undefined);
       return;
     }
+
+    const now = Date.now();
+    if (wasEmpty) {
+      createdAtRef.current = now;
+    }
+    modifiedAtRef.current = now;
+    setNoteTimestamp(
+      Math.max(createdAtRef.current ?? now, modifiedAtRef.current),
+    );
 
     const measuredHeight = wasEmpty ? 0 : (editorHeightRef.current ?? 0);
     updateEditorHeight(Math.max(measuredHeight, getMinimumNoteHeight(text)));
@@ -266,6 +281,23 @@ export default function Index() {
           >
             {isOrganizing && hasContent && (
               <View style={styles.cardHeader}>
+                <NativeText
+                  accessibilityLabel="메모 작성 또는 수정 시간"
+                  style={[
+                    styles.noteTimestamp,
+                    { color: isDark ? "#A1A1A6" : "#77777C" },
+                  ]}
+                >
+                  {noteTimestamp === undefined
+                    ? ""
+                    : new Date(noteTimestamp).toLocaleString("ko-KR", {
+                        year: "numeric",
+                        month: "numeric",
+                        day: "numeric",
+                        hour: "numeric",
+                        minute: "2-digit",
+                      })}
+                </NativeText>
                 <GlassTextButton
                   title="편집"
                   glassTint={isDark ? "#343438" : "#F2F2F5"}
@@ -401,7 +433,14 @@ const styles = StyleSheet.create({
     borderColor: "#4A4A4D",
   },
   cardHeader: {
-    alignItems: "flex-end",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     marginBottom: 8,
+  },
+  noteTimestamp: {
+    flexShrink: 1,
+    fontSize: 13,
+    marginRight: 8,
   },
 });
