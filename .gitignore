@@ -1,0 +1,31 @@
+# macOS
+.DS_Store
+
+# Dependencies and build output
+my-app/node_modules/
+my-app/.expo/
+my-app/dist/
+my-app/web-build/
+my-app/ios/
+my-app/android/
+
+# Expo and Metro generated files
+my-app/expo-env.d.ts
+my-app/.metro-health-check*
+
+# Local environment and debug files
+my-app/.env*.local
+my-app/npm-debug.*
+my-app/yarn-debug.*
+my-app/yarn-error.*
+my-app/*.tsbuildinfo
+
+# Native signing and temporary files
+my-app/.kotlin/
+my-app/*.orig.*
+my-app/*.jks
+my-app/*.p8
+my-app/*.p12
+my-app/*.key
+my-app/*.mobileprovision
+my-app/*.pem
