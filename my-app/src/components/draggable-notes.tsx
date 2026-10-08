@@ -9,6 +9,7 @@ import Animated, {
 import { scheduleOnRN } from "react-native-worklets";
 import * as Haptics from "expo-haptics";
 import { FolderWheel, wheelTargetAt, type WheelState } from "./folder-wheel";
+import type { Folder } from "@/lib/local-store";
 
 const PREVIEW_SIZE = 148;
 const FINGER_GAP = 24;
@@ -18,7 +19,7 @@ const FADE = {
   easing: Easing.bezier(0.23, 1, 0.32, 1),
   reduceMotion: ReduceMotion.System,
 };
-type Note = { id: number; text: string };
+type Note = { id: number; text: string; state: "draft" | "saved" | "trash" };
 type DragState = {
   active: SharedValue<number>;
   settling: SharedValue<boolean>;
@@ -43,13 +44,15 @@ function startFeedback() {
   void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
 }
 
-function DraggableRow({ note, drag, nativeScroll, rootRef, wheelSize, disabled, children }: {
+function DraggableRow({ note, drag, nativeScroll, rootRef, wheelSize, folderCount, disabled, onDrop, children }: {
   note: Note;
   drag: DragState;
   nativeScroll: NativeGesture;
   rootRef: ReturnType<typeof useAnimatedRef<View>>;
   wheelSize: number;
+  folderCount: number;
   disabled: boolean;
+  onDrop: (noteId: number, targetId: number) => void;
   children: ReactNode;
 }) {
   const gesture = Gesture.Pan()
@@ -86,10 +89,13 @@ function DraggableRow({ note, drag, nativeScroll, rootRef, wheelSize, disabled, 
       drag.wheel.selected.set(wheelTargetAt(
         drag.fingerX.get(), drag.fingerY.get(),
         drag.wheel.centerX.get(), drag.wheel.centerY.get(), wheelSize,
+        folderCount,
       ));
     })
     .onEnd(() => {
       if (drag.active.get() !== note.id) return;
+      const target = drag.wheel.selected.get();
+      if (target !== -1) scheduleOnRN(onDrop, note.id, target);
       drag.settling.set(true);
       // Freeze the preview at the release point and crossfade the original card in place.
       cancelAnimation(drag.previewScaleX);
@@ -154,14 +160,17 @@ function DragPreview({ note, drag, isDark }: { note: Note; drag: DragState; isDa
   );
 }
 
-export function DraggableNotes<T extends Note>({ notes, renderNote, children, paddingTop, paddingBottom, isDark, editing }: {
+export function DraggableNotes<T extends Note>({ notes, folders, renderNote, children, header, paddingTop, paddingBottom, isDark, editing, onDrop }: {
   notes: T[];
+  folders: Folder[];
   renderNote: (note: T) => ReactNode;
   children: ReactNode;
+  header?: ReactNode;
   paddingTop: number;
   paddingBottom: number;
   isDark: boolean;
   editing: boolean;
+  onDrop: (noteId: number, targetId: number) => void;
 }) {
   const dimensions = useWindowDimensions();
   const wheelSize = Math.min(dimensions.width - 32, dimensions.height - paddingTop - paddingBottom - 32, 420);
@@ -213,16 +222,17 @@ export function DraggableNotes<T extends Note>({ notes, renderNote, children, pa
           automaticallyAdjustKeyboardInsets
           removeClippedSubviews={false}
           contentContainerStyle={{ flexGrow: 1, paddingTop, paddingBottom }}>
+          {header}
           {notes.map((note) => (
             <DraggableRow key={note.id} note={note} drag={drag} nativeScroll={nativeScroll}
-              rootRef={rootRef} wheelSize={wheelSize} disabled={editing}>
+              rootRef={rootRef} wheelSize={wheelSize} folderCount={folders.length} disabled={editing} onDrop={onDrop}>
               {renderNote(note)}
             </DraggableRow>
           ))}
           {children}
         </Animated.ScrollView>
       </GestureDetector>
-      <FolderWheel wheel={wheel} size={wheelSize} isDark={isDark} />
+      <FolderWheel wheel={wheel} size={wheelSize} isDark={isDark} folders={folders} />
       {notes.map((note) => <DragPreview key={note.id} note={note} drag={drag} isDark={isDark} />)}
     </Animated.View>
   );

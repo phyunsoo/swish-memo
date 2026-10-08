@@ -1,6 +1,7 @@
 import NativeWheelRing, { hasNativeWheelRing } from "../../modules/liquid-glass-wheel/src/LiquidGlassWheelView";
 import type { WheelRingViewProps } from "../../modules/liquid-glass-wheel/src/LiquidGlassWheel.types";
 import { StyleSheet, View } from "react-native";
+import type { Folder } from "@/lib/local-store";
 import { Image } from "expo-image";
 import { MaskedView } from "@expo/ui/community/masked-view";
 import { SymbolView, type SymbolViewProps } from "expo-symbols";
@@ -43,28 +44,46 @@ type Target = {
   symbol: SymbolViewProps["name"];
   start: number;
   end: number;
+  kind: "folder" | "trash";
 };
 
-// Visuals and hit testing share the four sector boundaries.
-const TARGETS: Target[] = [
-  { id: 0, title: "임시저장", symbol: "doc.badge.clock", start: 270, end: 360 },
-  { id: 1, title: "삭제", symbol: "trash", start: 0, end: 90 },
-  { id: 2, title: "인사이트", symbol: "folder", start: 90, end: 180 },
-  { id: 3, title: "투두리스트", symbol: "checklist", start: 180, end: 270 },
-];
+const TRASH_TITLE = "삭제";
 
-// The finger, rather than the offset preview card, determines the selected direction.
-export function wheelTargetAt(x: number, y: number, centerX: number, centerY: number, size: number) {
+function folderSector(index: number, folderCount: number) {
+  const slotCount = folderCount + 1;
+  const sectorSize = 360 / slotCount;
+  const start = sectorSize / 2;
+  return {
+    start: start + index * sectorSize,
+    end: start + (index + 1) * sectorSize,
+  };
+}
+
+function targetsFor(folders: Folder[]): Target[] {
+  const slotSize = 360 / (folders.length + 1);
+  const targets: Target[] = folders.map((folder, index): Target => ({
+      id: index,
+      title: folder.name,
+      symbol: folder.kind === "todo" ? "checklist" : "folder",
+      ...folderSector(index, folders.length),
+      kind: "folder",
+    }));
+  return [
+    { id: folders.length, title: TRASH_TITLE, symbol: "trash", start: 360 - slotSize / 2, end: 360 + slotSize / 2, kind: "trash" },
+    ...targets,
+  ];
+}
+
+export function wheelTargetAt(x: number, y: number, centerX: number, centerY: number, size: number, folderCount: number) {
   "worklet";
   const dx = x - centerX;
   const dy = y - centerY;
   const distance = Math.sqrt(dx * dx + dy * dy);
   if (distance < size * 0.29 || distance > size / 2 + 16) return -1;
   const angle = (Math.atan2(dx, -dy) * 180 / Math.PI + 360) % 360;
-  for (const target of TARGETS) {
-    if (angle >= target.start && angle < target.end) return target.id;
-  }
-  return -1;
+  const slotSize = 360 / (folderCount + 1);
+  if (angle < slotSize / 2 || angle >= 360 - slotSize / 2) return folderCount;
+  return Math.floor((angle - slotSize / 2) / slotSize);
 }
 
 function point(radius: number, angle: number) {
@@ -84,13 +103,8 @@ function sectorSource(start: number, end: number, fill: string) {
   return { uri: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}` };
 }
 
-// SVG geometry is fixed, so create each source once instead of on every render.
-const SECTOR_SOURCES = Object.fromEntries(
-  TARGETS.map((target) => [target.id, sectorSource(target.start, target.end, "#FFFFFF")]),
-);
-
 function selectionColor(target: Target) {
-  return target.id === 1 ? DELETE_COLOR : ACCENT;
+  return target.kind === "trash" ? DELETE_COLOR : ACCENT;
 }
 
 function WheelSector({ target, wheel }: {
@@ -100,10 +114,11 @@ function WheelSector({ target, wheel }: {
   const style = useAnimatedStyle(() => ({
     opacity: withTiming(wheel.selected.get() === target.id ? 1 : 0, FEEDBACK),
   }));
+  const source = sectorSource(target.start, target.end, "#FFFFFF");
 
   return (
     <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, style]}>
-      <Image source={SECTOR_SOURCES[target.id]} contentFit="fill" tintColor={selectionColor(target)}
+      <Image source={source} contentFit="fill" tintColor={selectionColor(target)}
         style={[StyleSheet.absoluteFill, { opacity: SELECTION_OPACITY }]} />
     </Animated.View>
   );
@@ -116,7 +131,8 @@ function WheelTarget({ target, wheel, size, isDark }: {
   isDark: boolean;
 }) {
   const selectedColor = selectionColor(target);
-  const baseColor = target.id === 1 ? DELETE_TEXT : isDark ? TEXT_DARK : TEXT_LIGHT;
+  const isTrash = target.kind === "trash";
+  const baseColor = isTrash ? DELETE_TEXT : isDark ? TEXT_DARK : TEXT_LIGHT;
   const radians = (target.start + target.end) / 2 * Math.PI / 180;
   const radius = size * 0.39;
   const highlightStyle = useAnimatedStyle(() => ({
@@ -124,6 +140,7 @@ function WheelTarget({ target, wheel, size, isDark }: {
   }));
   const labelStyle = useAnimatedStyle(() => ({
     color: wheel.selected.get() === target.id ? selectedColor : baseColor,
+    opacity: 1,
   }));
 
   return (
@@ -162,17 +179,22 @@ function WheelRing({ size }: { size: number }) {
   );
 }
 
-function WheelContents({ wheel, size, isDark }: { wheel: WheelState; size: number; isDark: boolean }) {
+function WheelContents({ wheel, size, isDark, folders }: { wheel: WheelState; size: number; isDark: boolean; folders: Folder[] }) {
   const opacityStyle = useAnimatedStyle(() => ({ opacity: wheel.opacity.get() }));
+  const targets = targetsFor(folders);
   return (
     <Animated.View style={[StyleSheet.absoluteFill, opacityStyle]}>
-      {TARGETS.map((target) => <WheelSector key={target.id} target={target} wheel={wheel} />)}
-      {TARGETS.map((target) => <WheelTarget key={target.id} target={target} wheel={wheel} size={size} isDark={isDark} />)}
+      {targets.map((target) => (
+        <View key={`${target.kind}-${target.id}`} pointerEvents="none" style={StyleSheet.absoluteFill}>
+          <WheelSector target={target} wheel={wheel} />
+          <WheelTarget target={target} wheel={wheel} size={size} isDark={isDark} />
+        </View>
+      ))}
     </Animated.View>
   );
 }
 
-export function FolderWheel({ wheel, size, isDark }: { wheel: WheelState; size: number; isDark: boolean }) {
+export function FolderWheel({ wheel, size, isDark, folders }: { wheel: WheelState; size: number; isDark: boolean; folders: Folder[] }) {
   const opacityStyle = useAnimatedStyle(() => ({ opacity: wheel.opacity.get() }));
   const nativeProps = useAnimatedProps<WheelRingViewProps>(() => ({
     visible: wheel.opacity.get() > 0.01,
@@ -208,7 +230,7 @@ export function FolderWheel({ wheel, size, isDark }: { wheel: WheelState; size: 
               <WheelRing size={size} />
             </Animated.View>
           )}
-          <WheelContents wheel={wheel} size={size} isDark={isDark} />
+          <WheelContents wheel={wheel} size={size} isDark={isDark} folders={folders} />
         </Animated.View>
       </Animated.View>
     </>
