@@ -1,13 +1,14 @@
 import { useLayoutEffect, useMemo, type ReactNode } from "react";
-import { Keyboard, StyleSheet, Text, View } from "react-native";
+import { Keyboard, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { Gesture, GestureDetector, type NativeGesture } from "react-native-gesture-handler";
 import Animated, {
   cancelAnimation, Easing, measure, ReduceMotion, useAnimatedRef,
-  useAnimatedStyle, useSharedValue, withSpring, withTiming,
+  useAnimatedStyle, useAnimatedReaction, useSharedValue, withSpring, withTiming,
   type SharedValue,
 } from "react-native-reanimated";
 import { scheduleOnRN } from "react-native-worklets";
 import * as Haptics from "expo-haptics";
+import { FolderWheel, wheelTargetAt, type WheelState } from "./folder-wheel";
 
 const PREVIEW_SIZE = 148;
 const FINGER_GAP = 24;
@@ -21,6 +22,7 @@ type Note = { id: number; text: string };
 type DragState = {
   active: SharedValue<number>;
   settling: SharedValue<boolean>;
+  wheel: WheelState;
   fingerX: SharedValue<number>;
   fingerY: SharedValue<number>;
   rootX: SharedValue<number>;
@@ -32,16 +34,21 @@ type DragState = {
   previewScaleY: SharedValue<number>;
 };
 
+function selectionFeedback() {
+  void Haptics.selectionAsync().catch(() => {});
+}
+
 function startFeedback() {
   Keyboard.dismiss();
   void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
 }
 
-function DraggableRow({ note, drag, nativeScroll, rootRef, disabled, children }: {
+function DraggableRow({ note, drag, nativeScroll, rootRef, wheelSize, disabled, children }: {
   note: Note;
   drag: DragState;
   nativeScroll: NativeGesture;
   rootRef: ReturnType<typeof useAnimatedRef<View>>;
+  wheelSize: number;
   disabled: boolean;
   children: ReactNode;
 }) {
@@ -57,6 +64,10 @@ function DraggableRow({ note, drag, nativeScroll, rootRef, disabled, children }:
       drag.rootX.set(root.pageX);
       drag.rootY.set(root.pageY);
       drag.viewportWidth.set(root.width);
+      drag.wheel.centerX.set(root.width / 2);
+      drag.wheel.centerY.set(root.height / 2);
+      drag.wheel.selected.set(-1);
+      drag.wheel.opacity.set(withTiming(1, FADE));
       drag.fingerX.set(event.absoluteX - root.pageX);
       drag.fingerY.set(event.absoluteY - root.pageY);
       drag.previewScaleX.set(0.97);
@@ -72,6 +83,10 @@ function DraggableRow({ note, drag, nativeScroll, rootRef, disabled, children }:
       if (drag.active.get() !== note.id || drag.settling.get()) return;
       drag.fingerX.set(event.absoluteX - drag.rootX.get());
       drag.fingerY.set(event.absoluteY - drag.rootY.get());
+      drag.wheel.selected.set(wheelTargetAt(
+        drag.fingerX.get(), drag.fingerY.get(),
+        drag.wheel.centerX.get(), drag.wheel.centerY.get(), wheelSize,
+      ));
     })
     .onEnd(() => {
       if (drag.active.get() !== note.id) return;
@@ -80,10 +95,12 @@ function DraggableRow({ note, drag, nativeScroll, rootRef, disabled, children }:
       cancelAnimation(drag.previewScaleX);
       cancelAnimation(drag.previewScaleY);
       drag.previewOpacity.set(withTiming(0, FADE));
+      drag.wheel.opacity.set(withTiming(0, FADE));
       drag.cardOpacity.set(withTiming(1, FADE, (finished) => {
         if (finished) {
           drag.active.set(-1);
           drag.settling.set(false);
+          drag.wheel.selected.set(-1);
         }
       }));
     })
@@ -93,6 +110,8 @@ function DraggableRow({ note, drag, nativeScroll, rootRef, disabled, children }:
         drag.settling.set(false);
         drag.previewOpacity.set(0);
         drag.cardOpacity.set(1);
+        drag.wheel.opacity.set(0);
+        drag.wheel.selected.set(-1);
       }
     });
 
@@ -105,7 +124,7 @@ function DraggableRow({ note, drag, nativeScroll, rootRef, disabled, children }:
       <Animated.View
         collapsable={false}
         style={rowStyle}
-        accessibilityHint="길게 누르면 메모 미리보기를 끌 수 있습니다"
+        accessibilityHint="길게 누르면 폴더 휠이 나타납니다"
       >
         {children}
       </Animated.View>
@@ -143,8 +162,15 @@ export function DraggableNotes<T extends Note>({ notes, renderNote, children, pa
   isDark: boolean;
   editing: boolean;
 }) {
+  const dimensions = useWindowDimensions();
+  const wheelSize = Math.min(dimensions.width - 32, dimensions.height - paddingTop - paddingBottom - 32, 420);
   const rootRef = useAnimatedRef<View>();
   const nativeScroll = useMemo(() => Gesture.Native(), []);
+  const wheelOpacity = useSharedValue(0);
+  const selected = useSharedValue(-1);
+  const centerX = useSharedValue(0);
+  const centerY = useSharedValue(0);
+  const wheel: WheelState = { opacity: wheelOpacity, selected, centerX, centerY };
   const active = useSharedValue(-1);
   const settling = useSharedValue(false);
   const fingerX = useSharedValue(0);
@@ -156,17 +182,27 @@ export function DraggableNotes<T extends Note>({ notes, renderNote, children, pa
   const previewOpacity = useSharedValue(0);
   const previewScaleX = useSharedValue(1);
   const previewScaleY = useSharedValue(1);
-  const drag: DragState = { active, settling, fingerX, fingerY, rootX, rootY,
+  const drag: DragState = { active, settling, wheel, fingerX, fingerY, rootX, rootY,
     viewportWidth, cardOpacity, previewOpacity, previewScaleX, previewScaleY };
 
   useLayoutEffect(() => {
     cancelAnimation(cardOpacity);
     cancelAnimation(previewOpacity);
+    cancelAnimation(wheelOpacity);
     active.set(-1);
     settling.set(false);
     cardOpacity.set(1);
     previewOpacity.set(0);
-  }, [notes, active, settling, cardOpacity, previewOpacity]);
+    wheelOpacity.set(0);
+    selected.set(-1);
+  }, [notes, active, settling, cardOpacity, previewOpacity, wheelOpacity, selected]);
+
+  useAnimatedReaction(
+    () => active.get() !== -1 && !settling.get() ? selected.get() : -1,
+    (target, previous) => {
+      if (target !== -1 && target !== previous) scheduleOnRN(selectionFeedback);
+    },
+  );
 
   return (
     <Animated.View ref={rootRef} collapsable={false} style={styles.container}>
@@ -178,13 +214,14 @@ export function DraggableNotes<T extends Note>({ notes, renderNote, children, pa
           contentContainerStyle={{ flexGrow: 1, paddingTop, paddingBottom }}>
           {notes.map((note) => (
             <DraggableRow key={note.id} note={note} drag={drag} nativeScroll={nativeScroll}
-              rootRef={rootRef} disabled={editing}>
+              rootRef={rootRef} wheelSize={wheelSize} disabled={editing}>
               {renderNote(note)}
             </DraggableRow>
           ))}
           {children}
         </Animated.ScrollView>
       </GestureDetector>
+      <FolderWheel wheel={wheel} size={wheelSize} isDark={isDark} />
       {notes.map((note) => <DragPreview key={note.id} note={note} drag={drag} isDark={isDark} />)}
     </Animated.View>
   );
