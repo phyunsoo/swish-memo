@@ -2,7 +2,6 @@ import { useRef, useState } from "react";
 import {
   Keyboard,
   Platform,
-  ScrollView,
   StatusBar,
   StyleSheet,
   Text as NativeText,
@@ -11,6 +10,7 @@ import {
   useColorScheme,
 } from "react-native";
 import { Stack } from "expo-router";
+import { DraggableNotes } from "@/components/draggable-notes";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { GlassView, isLiquidGlassAvailable } from "expo-glass-effect";
 import { Button, Host, Icon, Text } from "@expo/ui";
@@ -272,18 +272,13 @@ export default function Index() {
           </View>
         </View>
 
-        <ScrollView
-          style={styles.scrollArea}
-          contentInsetAdjustmentBehavior="never"
-          keyboardShouldPersistTaps="handled"
-          automaticallyAdjustKeyboardInsets
-          contentContainerStyle={{
-            flexGrow: 1,
-            paddingTop: insets.top + 12 + BUTTON_HEIGHT,
-            paddingBottom: Math.max(insets.bottom, 18),
-          }}
-        >
-          {notes.map((note) => (
+        <DraggableNotes
+          notes={notes}
+          isDark={isDark}
+          editing={isEditingCard}
+          paddingTop={insets.top + 12 + BUTTON_HEIGHT}
+          paddingBottom={Math.max(insets.bottom, 18)}
+          renderNote={(note) => (
             <View
               key={note.id}
               style={[
@@ -333,7 +328,6 @@ export default function Index() {
                 />
               ) : (
                 <NativeText
-                  selectable
                   style={[
                     styles.editorInput,
                     { color: isDark ? "#F5F5F2" : "#171717" },
@@ -343,7 +337,8 @@ export default function Index() {
                 </NativeText>
               )}
             </View>
-          ))}
+          )}
+        >
           <View style={[styles.editorCard, styles.editingCard]}>
             <NativeTextInput
               ref={inputRef}
@@ -365,7 +360,7 @@ export default function Index() {
               ]}
             />
           </View>
-        </ScrollView>
+        </DraggableNotes>
       </View>
     </>
   );
@@ -373,9 +368,6 @@ export default function Index() {
 
 const styles = StyleSheet.create({
   screen: {
-    flex: 1,
-  },
-  scrollArea: {
     flex: 1,
   },
   toolbarOverlay: {
