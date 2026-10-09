@@ -22,7 +22,11 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, { ReduceMotion, useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
 import { scheduleOnRN } from "react-native-worklets";
 import { GlassView, isLiquidGlassAvailable } from "expo-glass-effect";
-import { Button, Host, Icon, Text } from "@expo/ui";
+import { Button, Host, Text } from "@expo/ui";
+import { GlassButton, GLASS_BUTTON_SIZE } from "@/components/glass-button";
+import { HomeKebabMenu } from "@/components/home-kebab-menu";
+import { getNoteTextStyle, NOTE_TEXT_SIZE, NOTE_LINE_HEIGHT } from "@/lib/note-typography";
+import { TextSizeSheet } from "@/components/text-size-sheet";
 import {
   buttonBorderShape,
   buttonStyle,
@@ -31,13 +35,8 @@ import {
 } from "@expo/ui/swift-ui/modifiers";
 
 const ACCENT = "#E7A000";
-const BUTTON_HEIGHT = 60;
-const ICON_BUTTON_WIDTH = 60;
-const ICON_SIZE = 22;
-const ICON_LABEL_SIZE = 20;
+const BUTTON_HEIGHT = GLASS_BUTTON_SIZE;
 const TEXT_BUTTON_WIDTH = 72;
-const NOTE_FONT_SIZE = 22;
-const NOTE_LINE_HEIGHT = 35;
 const PLACEHOLDER =
   "떠오른 생각\n\n기록은 가볍게,\n정리는 나중에.\n\n지금 생각난 것을 먼저 적어두기.";
 const DRAWER_SPRING = { duration: 500, dampingRatio: 0.8, reduceMotion: ReduceMotion.System };
@@ -52,78 +51,6 @@ function formatTimestamp(timestamp: number) {
     hour: "numeric",
     minute: "2-digit",
   });
-}
-
-function GlassButton({
-  label,
-  symbol,
-  width = ICON_BUTTON_WIDTH,
-  tint = "#171717",
-  glassTint = "#F2F2F5",
-  onPress,
-}: {
-  label: string;
-  symbol: "folder" | "ellipsis";
-  width?: number;
-  tint?: string;
-  glassTint?: string;
-  onPress?: () => void;
-}) {
-  const usesNativeGlass = Platform.OS === "ios" && isLiquidGlassAvailable();
-
-  return (
-    <View style={[styles.glassButton, { width, height: BUTTON_HEIGHT }]}>
-      {!usesNativeGlass && (
-        <GlassView
-          pointerEvents="none"
-          glassEffectStyle="regular"
-          isInteractive
-          tintColor={glassTint}
-          style={styles.glassSurface}
-        />
-      )}
-      <Host
-        matchContents
-        ignoreSafeArea="all"
-        seedColor={ACCENT}
-        accessible
-        accessibilityRole="button"
-        accessibilityLabel={label}
-      >
-        <Button
-          onPress={onPress}
-          variant="text"
-          modifiers={[
-            buttonStyle(usesNativeGlass ? "glass" : "plain"),
-            buttonBorderShape("circle"),
-            controlSize("large"),
-            frame({ width, height: BUTTON_HEIGHT }),
-          ]}
-          style={{
-            width,
-            height: BUTTON_HEIGHT,
-            paddingHorizontal: 0,
-            paddingVertical: 0,
-          }}
-        >
-          {Platform.OS === "ios" ? (
-            <Icon
-              name={symbol}
-              size={ICON_SIZE}
-              color={tint}
-              modifiers={[
-                frame({ width: ICON_LABEL_SIZE, height: ICON_LABEL_SIZE }),
-              ]}
-            />
-          ) : (
-            <Text textStyle={{ fontSize: ICON_SIZE, color: tint }}>
-              {symbol === "ellipsis" ? "⋮" : "📁"}
-            </Text>
-          )}
-        </Button>
-      </Host>
-    </View>
-  );
 }
 
 function GlassTextButton({
@@ -188,13 +115,15 @@ export default function Index() {
   const isDark = colorScheme === "dark";
   const inputRef = useRef<InstanceType<typeof NativeTextInput>>(null);
   const editInputRef = useRef<InstanceType<typeof NativeTextInput>>(null);
-  const { notes, setNotes, folders, setFolders, noteText, setNoteText, allocateNoteId } = useMemoStorage();
+  const { notes, setNotes, folders, setFolders, noteText, setNoteText, noteFontSize, setNoteFontSize, allocateNoteId } = useMemoStorage();
+  const noteTextStyle = getNoteTextStyle(noteFontSize);
   const [noteTimestamp, setNoteTimestamp] = useState<number | undefined>();
   const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
   const [editingText, setEditingText] = useState("");
   const [editingTimestamp, setEditingTimestamp] = useState<number>(0);
   const [focusedNoteId, setFocusedNoteId] = useState<number | null>(null);
   const [drawerVisible, setDrawerVisible] = useState(false);
+  const [textSizeVisible, setTextSizeVisible] = useState(false);
   const drawerProgress = useSharedValue(0);
   const drawerGestureStart = useSharedValue(0);
   const drawerGestureAllowed = useSharedValue(false);
@@ -306,6 +235,39 @@ export default function Index() {
     Keyboard.dismiss();
   };
 
+  const confirmMoveAllDraftsToTrash = () => {
+    Alert.alert("모두 삭제", "작성 화면의 모든 메모를 휴지통으로 이동할까요?", [
+      { text: "취소", style: "cancel" },
+      {
+        text: "확인",
+        style: "destructive",
+        onPress: () => {
+          const now = Date.now();
+          const unsavedNote: StoredNote | null = noteText.trim() ? {
+            id: allocateNoteId(),
+            text: noteText,
+            timestamp: noteTimestamp ?? now,
+            folderId: null,
+            state: "trash",
+          } : null;
+          setNotes((current) => {
+            const updated = current.map((note) => {
+              if (note.state !== "draft" && note.id !== focusedNoteId && note.id !== editingNoteId) return note;
+              const text = note.id === editingNoteId ? editingText : note.text;
+              return { ...note, text, folderId: null, state: "trash" as const, timestamp: now };
+            });
+            return unsavedNote ? [...updated, unsavedNote] : updated;
+          });
+          setNoteText("");
+          setNoteTimestamp(undefined);
+          setEditingNoteId(null);
+          setFocusedNoteId(null);
+          Keyboard.dismiss();
+        },
+      },
+    ]);
+  };
+
   const openMoreMenu = () => {
     const focused = notes.find((note) => note.id === (editingNoteId ?? focusedNoteId));
     const actions: Parameters<typeof Alert.alert>[2] = [];
@@ -323,7 +285,7 @@ export default function Index() {
         setNoteTimestamp(undefined);
       } });
     }
-    actions.push({ text: "설정", onPress: () => Alert.alert("설정", "메모는 이 기기에 자동 저장됩니다. iCloud 동기화는 아직 연결되지 않았습니다.") });
+    actions.push({ text: "설정", onPress: () => {} });
     actions.push({ text: "닫기", style: "cancel" });
     Alert.alert("더 보기", undefined, actions);
   };
@@ -439,13 +401,17 @@ export default function Index() {
                   onPress={finishEditing}
                 />
               )}
-              <GlassButton
-                label="더 보기"
-                symbol="ellipsis"
-                tint={isDark ? "#F5F5F2" : "#171717"}
-                glassTint={isDark ? "#343438" : "#F2F2F5"}
-                onPress={openMoreMenu}
-              />
+              {activeView === "home" ? (
+                <HomeKebabMenu isDark={isDark} onDelete={confirmMoveAllDraftsToTrash} onTextSize={() => setTextSizeVisible(true)} />
+              ) : (
+                <GlassButton
+                  label="더 보기"
+                  symbol="ellipsis"
+                  tint={isDark ? "#F5F5F2" : "#171717"}
+                  glassTint={isDark ? "#343438" : "#F2F2F5"}
+                  onPress={openMoreMenu}
+                />
+              )}
             </View>
           </View>
         </View>
@@ -454,6 +420,7 @@ export default function Index() {
           notes={visibleNotes}
           folders={folders}
           isDark={isDark}
+          noteFontSize={noteFontSize}
           isTrashView={activeView === "trash"}
           editing={isEditingCard}
           onDrop={onDrop}
@@ -512,6 +479,7 @@ export default function Index() {
                   selectionColor={ACCENT}
                   style={[
                     styles.editorInput,
+                    noteTextStyle,
                     { color: "#171717" },
                   ]}
                 />
@@ -519,6 +487,7 @@ export default function Index() {
                 <NativeText
                   style={[
                     styles.editorInput,
+                    noteTextStyle,
                     { color: "#171717" },
                   ]}
                 >
@@ -543,7 +512,7 @@ export default function Index() {
                 placeholderTextColor={isDark ? "#747474" : "#A0A0A0"}
                 scrollEnabled={false}
                 selectionColor={ACCENT}
-                style={[styles.editorInput, styles.newNoteInput, { color: isDark ? "#F5F5F2" : "#171717" }]}
+                style={[styles.editorInput, styles.newNoteInput, noteTextStyle, { color: isDark ? "#F5F5F2" : "#171717" }]}
               />
             </View>
           ) : null}
@@ -564,6 +533,14 @@ export default function Index() {
           onClose={closeDrawer}
           onSelectView={selectView}
           onCreateFolder={createFolder}
+        />
+        <TextSizeSheet
+          visible={textSizeVisible}
+          onClose={() => setTextSizeVisible(false)}
+          value={noteFontSize}
+          onValueChange={setNoteFontSize}
+          preview="예시 텍스트입니다."
+          isDark={isDark}
         />
       </View>
       </GestureDetector>
@@ -638,7 +615,7 @@ const styles = StyleSheet.create({
   editorInput: {
     width: "100%",
     padding: 0,
-    fontSize: NOTE_FONT_SIZE,
+    fontSize: NOTE_TEXT_SIZE.default,
     lineHeight: NOTE_LINE_HEIGHT,
     textAlignVertical: "top",
   },
@@ -650,7 +627,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 26,
     paddingHorizontal: 15,
     paddingVertical: 6,
-    backgroundColor: "#F7F7F7",
+    backgroundColor: "#FAFAFA",
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: "#CED1D6",
     borderRadius: 18,

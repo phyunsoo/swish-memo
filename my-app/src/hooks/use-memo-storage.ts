@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { INITIAL_SNAPSHOT, loadSnapshot, saveSnapshot, type AppSnapshot, type Folder, type StoredNote } from "@/lib/local-store";
+import { NOTE_TEXT_SIZE } from "@/lib/note-typography";
 
 export function useMemoStorage() {
   const nextNoteId = useRef(0);
   const [notes, setNotes] = useState<StoredNote[]>([]);
   const [folders, setFolders] = useState<Folder[]>(INITIAL_SNAPSHOT.folders);
   const [noteText, setNoteText] = useState("");
+  const [noteFontSize, setNoteFontSize] = useState<number>(NOTE_TEXT_SIZE.default);
   const [storageReady, setStorageReady] = useState(false);
 
   useEffect(() => {
@@ -15,6 +17,7 @@ export function useMemoStorage() {
       setFolders(snapshot.folders);
       setNotes(snapshot.notes);
       setNoteText(snapshot.draftText);
+      setNoteFontSize(snapshot.noteFontSize);
       nextNoteId.current = Math.max(0, ...snapshot.notes.map((note) => note.id + 1));
       setStorageReady(true);
     }).catch((error) => {
@@ -26,11 +29,11 @@ export function useMemoStorage() {
 
   useEffect(() => {
     if (!storageReady) return;
-    const snapshot: AppSnapshot = { folders, notes, draftText: noteText };
+    const snapshot: AppSnapshot = { folders, notes, draftText: noteText, noteFontSize };
     void saveSnapshot(snapshot).catch((error) => console.warn("메모 저장에 실패했습니다.", error));
-  }, [folders, notes, noteText, storageReady]);
+  }, [folders, notes, noteText, noteFontSize, storageReady]);
 
   const allocateNoteId = () => nextNoteId.current++;
 
-  return { notes, setNotes, folders, setFolders, noteText, setNoteText, allocateNoteId };
+  return { notes, setNotes, folders, setFolders, noteText, setNoteText, noteFontSize, setNoteFontSize, allocateNoteId };
 }

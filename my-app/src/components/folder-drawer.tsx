@@ -3,7 +3,7 @@ import { Platform, Pressable, ScrollView, StyleSheet, Text as NativeText, View }
 import Animated from "react-native-reanimated";
 import { Host } from "@expo/ui";
 import { Button as SwiftUIButton, HStack as SwiftHStack, Image as SwiftUIImage, Spacer as SwiftSpacer, Text as SwiftUIText } from "@expo/ui/swift-ui";
-import { background, buttonStyle, font, foregroundStyle, frame, padding, shapes } from "@expo/ui/swift-ui/modifiers";
+import { background, buttonStyle, contentShape, font, foregroundStyle, frame, padding, shapes } from "@expo/ui/swift-ui/modifiers";
 import type { Folder, StoredNote } from "@/lib/local-store";
 
 import { FOLDER_ROW } from "./folder-row-appearance";
@@ -36,6 +36,7 @@ function DrawerRow({ title, symbol, count, selected, dark, width, onPress }: {
         <SwiftHStack spacing={FOLDER_ROW.iconGap} modifiers={[
           padding({ horizontal: FOLDER_ROW.horizontalPadding }),
           frame({ width, height: 48 }),
+          contentShape(shapes.rectangle()),
           background(selectionColor, shapes.roundedRectangle({ cornerRadius: FOLDER_ROW.radius })),
         ]}>
           <SwiftUIImage systemName={symbol} size={FOLDER_ROW.iconSize} color={iconColor} />

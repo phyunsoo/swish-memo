@@ -12,6 +12,8 @@ import { FolderQuickMenu, type QuickMenuState } from "./folder-quick-menu";
 import { menuLayout, menuTargetAt, menuScrollDirection, menuMaxScrollOffset } from "./quick-menu-geometry";
 import type { Folder } from "@/lib/local-store";
 
+import { NOTE_TEXT_SIZE } from "@/lib/note-typography";
+
 const SPRING = { duration: 400, dampingRatio: 1, reduceMotion: ReduceMotion.System };
 const FADE = {
   duration: 150,
@@ -165,7 +167,7 @@ function DraggableRow({ note, drag, nativeScroll, rootRef, paddingTop, paddingBo
   );
 }
 
-function DragPreview({ note, drag, isDark }: { note: Note; drag: DragState; isDark: boolean }) {
+function DragPreview({ note, drag, isDark, noteFontSize }: { note: Note; drag: DragState; isDark: boolean; noteFontSize: number }) {
   const style = useAnimatedStyle(() => ({
     opacity: drag.active.get() === note.id ? drag.previewOpacity.get() : 0,
     width: drag.menu.layout.get().width,
@@ -180,7 +182,7 @@ function DragPreview({ note, drag, isDark }: { note: Note; drag: DragState; isDa
   return (
     <Animated.View pointerEvents="none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants"
       style={[styles.preview, { backgroundColor: isDark ? "#242423" : "#FFFFFF", borderColor: isDark ? "#4A4A4D" : "#CED1D6" }, style]}>
-      <Text numberOfLines={2} style={[styles.previewText, { color: isDark ? "#F5F5F2" : "#171717" }]}>
+      <Text numberOfLines={2} style={[styles.previewText, { color: isDark ? "#F5F5F2" : "#171717", fontSize: noteFontSize * 16 / NOTE_TEXT_SIZE.default, lineHeight: noteFontSize * 23 / NOTE_TEXT_SIZE.default }]}>
         {note.text.trim().slice(0, 100)}
       </Text>
       <Text style={[styles.ellipsis, { color: isDark ? "#A1A1A6" : "#77777C" }]}>…</Text>
@@ -188,7 +190,7 @@ function DragPreview({ note, drag, isDark }: { note: Note; drag: DragState; isDa
   );
 }
 
-export function DraggableNotes<T extends Note>({ notes, folders, renderNote, children, header, paddingTop, paddingBottom, isDark, isTrashView, editing, onDrop }: {
+export function DraggableNotes<T extends Note>({ notes, folders, renderNote, children, header, paddingTop, paddingBottom, isDark, isTrashView, editing, onDrop, noteFontSize = NOTE_TEXT_SIZE.default }: {
   notes: T[];
   folders: Folder[];
   renderNote: (note: T) => ReactNode;
@@ -200,6 +202,7 @@ export function DraggableNotes<T extends Note>({ notes, folders, renderNote, chi
   isTrashView: boolean;
   editing: boolean;
   onDrop: (noteId: number, targetId: number) => void;
+  noteFontSize?: number;
 }) {
   const dimensions = useWindowDimensions();
   const rootRef = useAnimatedRef<View>();
@@ -274,7 +277,7 @@ export function DraggableNotes<T extends Note>({ notes, folders, renderNote, chi
         </Animated.ScrollView>
       </GestureDetector>
       <FolderQuickMenu menu={menu} isDark={isDark} folders={folders} isTrashView={isTrashView} />
-      {notes.map((note) => <DragPreview key={note.id} note={note} drag={drag} isDark={isDark} />)}
+      {notes.map((note) => <DragPreview key={note.id} note={note} drag={drag} isDark={isDark} noteFontSize={noteFontSize} />)}
     </Animated.View>
   );
 }
