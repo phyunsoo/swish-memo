@@ -508,12 +508,17 @@ export default function Index() {
                 multiline
                 onChangeText={handleTextChange}
                 value={noteText}
-                placeholder={PLACEHOLDER}
-                placeholderTextColor={isDark ? "#747474" : "#A0A0A0"}
                 scrollEnabled={false}
                 selectionColor={ACCENT}
                 style={[styles.editorInput, styles.newNoteInput, noteTextStyle, { color: isDark ? "#F5F5F2" : "#171717" }]}
               />
+              {noteText.length === 0 && (
+                <View pointerEvents="none" style={styles.newNotePlaceholderWrap}>
+                  <NativeText style={[styles.editorInput, noteTextStyle, { color: isDark ? "#747474" : "#A0A0A0" }]}>
+                    {PLACEHOLDER}
+                  </NativeText>
+                </View>
+              )}
             </View>
           ) : null}
         </DraggableNotes>
@@ -524,7 +529,6 @@ export default function Index() {
           width={drawerWidth}
           isDark={isDark}
           topInset={insets.top}
-          bottomInset={insets.bottom}
           notes={notes}
           folders={folders}
           activeView={activeView}
@@ -533,6 +537,17 @@ export default function Index() {
           onClose={closeDrawer}
           onSelectView={selectView}
           onCreateFolder={createFolder}
+          onReorderFolders={(ids) => setFolders((current) => {
+            const custom = new Map(current.filter((folder) => folder.kind === "custom").map((folder) => [folder.id, folder]));
+            const ordered = ids.flatMap((id) => {
+              const folder = custom.get(id);
+              custom.delete(id);
+              return folder ? [folder] : [];
+            });
+            ordered.push(...custom.values());
+            let index = 0;
+            return current.map((folder) => folder.kind === "custom" ? ordered[index++] : folder);
+          })}
         />
         <TextSizeSheet
           visible={textSizeVisible}
@@ -621,6 +636,12 @@ const styles = StyleSheet.create({
   },
   newNoteInput: {
     minHeight: 280,
+  },
+  newNotePlaceholderWrap: {
+    position: "absolute",
+    top: 10,
+    left: 0,
+    right: 0,
   },
   organizingCard: {
     marginTop: 24,

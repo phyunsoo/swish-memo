@@ -1,8 +1,8 @@
 export const NOTE_TEXT_SIZE = {
-  default: 22,
-  min: 16,
+  default: 20,
+  min: 12,
   max: 28,
-  step: 3,
+  step: 4,
 } as const;
 
 export const NOTE_LINE_HEIGHT = 35;

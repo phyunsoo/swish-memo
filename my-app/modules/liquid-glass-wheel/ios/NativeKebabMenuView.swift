@@ -8,7 +8,6 @@ final class NativeKebabMenuView: ExpoView {
 
   private var menuButton: RestoringGlassMenuButton!
   private var isMenuPresented = false
-  private var pendingDelete = false
   private var isDark = false
 
   required init(appContext: AppContext? = nil) {
@@ -58,12 +57,7 @@ final class NativeKebabMenuView: ExpoView {
         self?.onTextSize()
       },
       UIAction(title: "모두 삭제", image: UIImage(systemName: "trash"), attributes: .destructive) { [weak self] _ in
-        guard let self else { return }
-        if self.isMenuPresented {
-          self.pendingDelete = true
-        } else {
-          self.onDelete()
-        }
+        self?.onDelete()
       }
     ])
     button.onMenuWillDisplay = { [weak self] in
@@ -76,10 +70,6 @@ final class NativeKebabMenuView: ExpoView {
       // Recreate the native glass after UIKit finishes removing the menu's preview.
       // Reassigning the old button's shadow/configuration can retain the broken glass state.
       self.installButton()
-      if self.pendingDelete {
-        self.pendingDelete = false
-        self.onDelete()
-      }
     }
 
     let oldButton = menuButton
