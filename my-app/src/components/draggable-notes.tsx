@@ -3,16 +3,15 @@ import { Keyboard, StyleSheet, Text, View, useWindowDimensions } from "react-nat
 import { Gesture, GestureDetector, type NativeGesture } from "react-native-gesture-handler";
 import Animated, {
   cancelAnimation, Easing, measure, ReduceMotion, useAnimatedRef,
-  useAnimatedStyle, useAnimatedReaction, useSharedValue, withSpring, withTiming,
+  useAnimatedStyle, useAnimatedReaction, useFrameCallback, useSharedValue, withSpring, withTiming,
   type SharedValue,
 } from "react-native-reanimated";
 import { scheduleOnRN } from "react-native-worklets";
 import * as Haptics from "expo-haptics";
-import { FolderWheel, wheelTargetAt, type WheelState } from "./folder-wheel";
+import { FolderQuickMenu, type QuickMenuState } from "./folder-quick-menu";
+import { menuLayout, menuTargetAt, menuScrollDirection, menuMaxScrollOffset } from "./quick-menu-geometry";
 import type { Folder } from "@/lib/local-store";
 
-const PREVIEW_SIZE = 148;
-const FINGER_GAP = 24;
 const SPRING = { duration: 400, dampingRatio: 1, reduceMotion: ReduceMotion.System };
 const FADE = {
   duration: 150,
@@ -23,12 +22,13 @@ type Note = { id: number; text: string; state: "draft" | "saved" | "trash" };
 type DragState = {
   active: SharedValue<number>;
   settling: SharedValue<boolean>;
-  wheel: WheelState;
+  menu: QuickMenuState;
+  scrollDirection: SharedValue<number>;
+  edgeElapsed: SharedValue<number>;
   fingerX: SharedValue<number>;
   fingerY: SharedValue<number>;
   rootX: SharedValue<number>;
   rootY: SharedValue<number>;
-  viewportWidth: SharedValue<number>;
   cardOpacity: SharedValue<number>;
   previewOpacity: SharedValue<number>;
   previewScaleX: SharedValue<number>;
@@ -44,12 +44,42 @@ function startFeedback() {
   void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
 }
 
-function DraggableRow({ note, drag, nativeScroll, rootRef, wheelSize, folderCount, disabled, onDrop, children }: {
+function updateMenuSelection(drag: DragState, folderCount: number) {
+  "worklet";
+  const x = drag.fingerX.get();
+  const y = drag.fingerY.get();
+  const layout = drag.menu.layout.get();
+  const offset = drag.menu.scrollOffset.get();
+  const previousDirection = drag.scrollDirection.get();
+  const direction = menuScrollDirection(x, y, layout, offset, folderCount, previousDirection);
+  if (direction !== previousDirection) drag.edgeElapsed.set(0);
+  drag.scrollDirection.set(direction);
+  drag.menu.selected.set(direction !== 0 ? -1 : menuTargetAt(x, y, layout, offset, folderCount));
+}
+
+function resetDragState(drag: DragState) {
+  "worklet";
+  cancelAnimation(drag.cardOpacity);
+  cancelAnimation(drag.previewOpacity);
+  cancelAnimation(drag.menu.opacity);
+  drag.active.set(-1);
+  drag.settling.set(false);
+  drag.cardOpacity.set(1);
+  drag.previewOpacity.set(0);
+  drag.menu.opacity.set(0);
+  drag.menu.selected.set(-1);
+  drag.scrollDirection.set(0);
+  drag.edgeElapsed.set(0);
+  drag.menu.scrollOffset.set(0);
+}
+
+function DraggableRow({ note, drag, nativeScroll, rootRef, paddingTop, paddingBottom, folderCount, disabled, onDrop, children }: {
   note: Note;
   drag: DragState;
   nativeScroll: NativeGesture;
   rootRef: ReturnType<typeof useAnimatedRef<View>>;
-  wheelSize: number;
+  paddingTop: number;
+  paddingBottom: number;
   folderCount: number;
   disabled: boolean;
   onDrop: (noteId: number, targetId: number) => void;
@@ -66,11 +96,13 @@ function DraggableRow({ note, drag, nativeScroll, rootRef, wheelSize, folderCoun
       if (!root) return;
       drag.rootX.set(root.pageX);
       drag.rootY.set(root.pageY);
-      drag.viewportWidth.set(root.width);
-      drag.wheel.centerX.set(root.width / 2);
-      drag.wheel.centerY.set(root.height / 2);
-      drag.wheel.selected.set(-1);
-      drag.wheel.opacity.set(withTiming(1, FADE));
+      drag.menu.layout.set(menuLayout(event.absoluteX - root.pageX, event.absoluteY - root.pageY,
+        root.width, root.height, paddingTop, paddingBottom, folderCount));
+      drag.menu.scrollOffset.set(0);
+      drag.scrollDirection.set(0);
+      drag.edgeElapsed.set(0);
+      drag.menu.selected.set(-1);
+      drag.menu.opacity.set(withTiming(1, FADE));
       drag.fingerX.set(event.absoluteX - root.pageX);
       drag.fingerY.set(event.absoluteY - root.pageY);
       drag.previewScaleX.set(0.97);
@@ -86,39 +118,33 @@ function DraggableRow({ note, drag, nativeScroll, rootRef, wheelSize, folderCoun
       if (drag.active.get() !== note.id || drag.settling.get()) return;
       drag.fingerX.set(event.absoluteX - drag.rootX.get());
       drag.fingerY.set(event.absoluteY - drag.rootY.get());
-      drag.wheel.selected.set(wheelTargetAt(
-        drag.fingerX.get(), drag.fingerY.get(),
-        drag.wheel.centerX.get(), drag.wheel.centerY.get(), wheelSize,
-        folderCount,
-      ));
+      updateMenuSelection(drag, folderCount);
     })
-    .onEnd(() => {
+    .onEnd((event) => {
       if (drag.active.get() !== note.id) return;
-      const target = drag.wheel.selected.get();
+      const target = drag.scrollDirection.get() !== 0 ? -1 : menuTargetAt(event.absoluteX - drag.rootX.get(), event.absoluteY - drag.rootY.get(),
+        drag.menu.layout.get(), drag.menu.scrollOffset.get(), folderCount);
+      drag.scrollDirection.set(0);
+      drag.edgeElapsed.set(0);
       if (target !== -1) scheduleOnRN(onDrop, note.id, target);
       drag.settling.set(true);
-      // Freeze the preview at the release point and crossfade the original card in place.
+      // Crossfade the fixed preview back to the original card.
       cancelAnimation(drag.previewScaleX);
       cancelAnimation(drag.previewScaleY);
       drag.previewOpacity.set(withTiming(0, FADE));
-      cancelAnimation(drag.wheel.opacity);
-      drag.wheel.opacity.set(0);
+      cancelAnimation(drag.menu.opacity);
+      drag.menu.opacity.set(0);
       drag.cardOpacity.set(withTiming(1, FADE, (finished) => {
         if (finished) {
           drag.active.set(-1);
           drag.settling.set(false);
-          drag.wheel.selected.set(-1);
+          drag.menu.selected.set(-1);
         }
       }));
     })
     .onFinalize((_event, success) => {
       if (!success && drag.active.get() === note.id) {
-        drag.active.set(-1);
-        drag.settling.set(false);
-        drag.previewOpacity.set(0);
-        drag.cardOpacity.set(1);
-        drag.wheel.opacity.set(0);
-        drag.wheel.selected.set(-1);
+        resetDragState(drag);
       }
     });
 
@@ -131,7 +157,7 @@ function DraggableRow({ note, drag, nativeScroll, rootRef, wheelSize, folderCoun
       <Animated.View
         collapsable={false}
         style={rowStyle}
-        accessibilityHint="길게 누르면 폴더 휠이 나타납니다"
+        accessibilityHint="길게 누른 뒤 폴더 메뉴로 끌고 손을 떼면 이동합니다"
       >
         {children}
       </Animated.View>
@@ -142,9 +168,11 @@ function DraggableRow({ note, drag, nativeScroll, rootRef, wheelSize, folderCoun
 function DragPreview({ note, drag, isDark }: { note: Note; drag: DragState; isDark: boolean }) {
   const style = useAnimatedStyle(() => ({
     opacity: drag.active.get() === note.id ? drag.previewOpacity.get() : 0,
+    width: drag.menu.layout.get().width,
+    height: drag.menu.layout.get().previewHeight,
     transform: [
-      { translateX: Math.max(PREVIEW_SIZE / 2 + 8, Math.min(drag.viewportWidth.get() - PREVIEW_SIZE / 2 - 8, drag.fingerX.get())) - PREVIEW_SIZE / 2 },
-      { translateY: Math.max(8, drag.fingerY.get() - PREVIEW_SIZE - FINGER_GAP) },
+      { translateX: drag.menu.layout.get().left },
+      { translateY: drag.menu.layout.get().previewTop },
       { scaleX: drag.previewScaleX.get() },
       { scaleY: drag.previewScaleY.get() },
     ],
@@ -152,7 +180,7 @@ function DragPreview({ note, drag, isDark }: { note: Note; drag: DragState; isDa
   return (
     <Animated.View pointerEvents="none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants"
       style={[styles.preview, { backgroundColor: isDark ? "#242423" : "#FFFFFF", borderColor: isDark ? "#4A4A4D" : "#CED1D6" }, style]}>
-      <Text numberOfLines={4} style={[styles.previewText, { color: isDark ? "#F5F5F2" : "#171717" }]}>
+      <Text numberOfLines={2} style={[styles.previewText, { color: isDark ? "#F5F5F2" : "#171717" }]}>
         {note.text.trim().slice(0, 100)}
       </Text>
       <Text style={[styles.ellipsis, { color: isDark ? "#A1A1A6" : "#77777C" }]}>…</Text>
@@ -160,7 +188,7 @@ function DragPreview({ note, drag, isDark }: { note: Note; drag: DragState; isDa
   );
 }
 
-export function DraggableNotes<T extends Note>({ notes, folders, renderNote, children, header, paddingTop, paddingBottom, isDark, editing, onDrop }: {
+export function DraggableNotes<T extends Note>({ notes, folders, renderNote, children, header, paddingTop, paddingBottom, isDark, isTrashView, editing, onDrop }: {
   notes: T[];
   folders: Folder[];
   renderNote: (note: T) => ReactNode;
@@ -169,43 +197,56 @@ export function DraggableNotes<T extends Note>({ notes, folders, renderNote, chi
   paddingTop: number;
   paddingBottom: number;
   isDark: boolean;
+  isTrashView: boolean;
   editing: boolean;
   onDrop: (noteId: number, targetId: number) => void;
 }) {
   const dimensions = useWindowDimensions();
-  const wheelSize = Math.min(dimensions.width - 32, dimensions.height - paddingTop - paddingBottom - 32, 420);
   const rootRef = useAnimatedRef<View>();
   const nativeScroll = useMemo(() => Gesture.Native(), []);
-  const wheelOpacity = useSharedValue(0);
+  const menuOpacity = useSharedValue(0);
   const selected = useSharedValue(-1);
-  const centerX = useSharedValue(0);
-  const centerY = useSharedValue(0);
-  const wheel: WheelState = { opacity: wheelOpacity, selected, centerX, centerY };
+  const layout = useSharedValue(menuLayout(dimensions.width / 2, dimensions.height / 2,
+    dimensions.width, dimensions.height, paddingTop, paddingBottom, folders.length));
+  const scrollOffset = useSharedValue(0);
+  const scrollDirection = useSharedValue(0);
+  const edgeElapsed = useSharedValue(0);
+  const menu = useMemo<QuickMenuState>(
+    () => ({ opacity: menuOpacity, selected, layout, scrollOffset }),
+    [menuOpacity, selected, layout, scrollOffset],
+  );
   const active = useSharedValue(-1);
   const settling = useSharedValue(false);
   const fingerX = useSharedValue(0);
   const fingerY = useSharedValue(0);
   const rootX = useSharedValue(0);
   const rootY = useSharedValue(0);
-  const viewportWidth = useSharedValue(0);
   const cardOpacity = useSharedValue(1);
   const previewOpacity = useSharedValue(0);
   const previewScaleX = useSharedValue(1);
   const previewScaleY = useSharedValue(1);
-  const drag: DragState = { active, settling, wheel, fingerX, fingerY, rootX, rootY,
-    viewportWidth, cardOpacity, previewOpacity, previewScaleX, previewScaleY };
+  const drag = useMemo<DragState>(
+    () => ({ active, settling, menu, scrollDirection, edgeElapsed, fingerX, fingerY, rootX, rootY,
+      cardOpacity, previewOpacity, previewScaleX, previewScaleY }),
+    [active, settling, menu, scrollDirection, edgeElapsed, fingerX, fingerY, rootX, rootY,
+      cardOpacity, previewOpacity, previewScaleX, previewScaleY],
+  );
 
   useLayoutEffect(() => {
-    cancelAnimation(cardOpacity);
-    cancelAnimation(previewOpacity);
-    cancelAnimation(wheelOpacity);
-    active.set(-1);
-    settling.set(false);
-    cardOpacity.set(1);
-    previewOpacity.set(0);
-    wheelOpacity.set(0);
-    selected.set(-1);
-  }, [notes, active, settling, cardOpacity, previewOpacity, wheelOpacity, selected]);
+    resetDragState(drag);
+  }, [notes, folders, dimensions.width, dimensions.height, paddingTop, paddingBottom, drag]);
+
+  // The UI thread keeps scrolling even when the finger stays still at an edge.
+  useFrameCallback((frame) => {
+    if (active.get() === -1 || settling.get() || scrollDirection.get() === 0) return;
+    const elapsed = Math.min(frame.timeSincePreviousFrame ?? 0, 32);
+    edgeElapsed.set(edgeElapsed.get() + elapsed);
+    if (edgeElapsed.get() < 300) return;
+    const maxOffset = menuMaxScrollOffset(folders.length, layout.get().listHeight);
+    scrollOffset.set(Math.max(0, Math.min(maxOffset,
+      scrollOffset.get() + scrollDirection.get() * 220 * elapsed / 1000)));
+    updateMenuSelection(drag, folders.length);
+  });
 
   useAnimatedReaction(
     () => active.get() !== -1 && !settling.get() ? selected.get() : -1,
@@ -225,14 +266,14 @@ export function DraggableNotes<T extends Note>({ notes, folders, renderNote, chi
           {header}
           {notes.map((note) => (
             <DraggableRow key={note.id} note={note} drag={drag} nativeScroll={nativeScroll}
-              rootRef={rootRef} wheelSize={wheelSize} folderCount={folders.length} disabled={editing} onDrop={onDrop}>
+              rootRef={rootRef} paddingTop={paddingTop} paddingBottom={paddingBottom} folderCount={folders.length} disabled={editing} onDrop={onDrop}>
               {renderNote(note)}
             </DraggableRow>
           ))}
           {children}
         </Animated.ScrollView>
       </GestureDetector>
-      <FolderWheel wheel={wheel} size={wheelSize} isDark={isDark} folders={folders} />
+      <FolderQuickMenu menu={menu} isDark={isDark} folders={folders} isTrashView={isTrashView} />
       {notes.map((note) => <DragPreview key={note.id} note={note} drag={drag} isDark={isDark} />)}
     </Animated.View>
   );
@@ -240,7 +281,7 @@ export function DraggableNotes<T extends Note>({ notes, folders, renderNote, chi
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  preview: { position: "absolute", left: 0, top: 0, width: PREVIEW_SIZE, height: PREVIEW_SIZE,
+  preview: { position: "absolute", left: 0, top: 0,
     borderRadius: 18, borderWidth: StyleSheet.hairlineWidth, padding: 16, zIndex: 10,
     shadowColor: "#000000", shadowOpacity: 0.18, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: 12 },
   previewText: { fontSize: 16, lineHeight: 23, flexShrink: 1 },

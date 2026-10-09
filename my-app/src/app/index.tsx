@@ -14,7 +14,7 @@ import {
 import { Stack } from "expo-router";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { DraggableNotes } from "@/components/draggable-notes";
-import type { Folder, StoredNote } from "@/lib/local-store";
+import type { StoredNote } from "@/lib/local-store";
 import { useMemoStorage } from "@/hooks/use-memo-storage";
 import { FolderDrawer } from "@/components/folder-drawer";
 import { hasFolderName, isValidTodoText, updateNoteContent } from "@/lib/memo-rules";
@@ -40,7 +40,7 @@ const NOTE_FONT_SIZE = 22;
 const NOTE_LINE_HEIGHT = 35;
 const PLACEHOLDER =
   "떠오른 생각\n\n기록은 가볍게,\n정리는 나중에.\n\n지금 생각난 것을 먼저 적어두기.";
-const DRAWER_SPRING = { duration: 300, dampingRatio: 0.8, reduceMotion: ReduceMotion.System };
+const DRAWER_SPRING = { duration: 500, dampingRatio: 0.8, reduceMotion: ReduceMotion.System };
 
 type Note = StoredNote;
 
@@ -281,28 +281,6 @@ export default function Index() {
     }, "plain-text");
   };
 
-  const renameFolder = (folder: Folder) => {
-    if (Platform.OS !== "ios") return;
-    Alert.prompt("폴더 이름 변경", "새 이름을 입력하세요.", (rawName) => {
-      const name = rawName.trim();
-      if (!name || hasFolderName(folders, name, folder.id)) return;
-      setFolders((current) => current.map((item) => item.id === folder.id ? { ...item, name } : item));
-    }, "plain-text", folder.name);
-  };
-
-  const removeFolder = (folder: Folder) => {
-    if (folder.kind !== "custom") return;
-    Alert.alert("폴더 삭제", `‘${folder.name}’과 안의 메모를 휴지통으로 옮길까요?`, [
-      { text: "취소", style: "cancel" },
-      { text: "삭제", style: "destructive", onPress: () => {
-        const deletedAt = Date.now();
-        setNotes((current) => current.map((note) => note.folderId === folder.id ? { ...note, state: "trash", timestamp: deletedAt } : note));
-        setFolders((current) => current.filter((item) => item.id !== folder.id));
-        if (activeView === folder.id) setActiveView("home");
-      } },
-    ]);
-  };
-
   const onDrop = (noteId: number, targetId: number) => {
     const note = notes.find((item) => item.id === noteId);
     if (!note) return;
@@ -314,9 +292,13 @@ export default function Index() {
     }
     const folderId = targetFolder?.id ?? null;
     const state = trashTarget ? "trash" : "saved";
-    setNotes((current) => current.map((item) => item.id === noteId
-      ? { ...item, folderId, state, timestamp: Date.now() }
-      : item));
+    if (trashTarget && activeView === "trash" && note.state === "trash") {
+      setNotes((current) => current.filter((item) => item.id !== noteId));
+    } else {
+      setNotes((current) => current.map((item) => item.id === noteId
+        ? { ...item, folderId, state, timestamp: Date.now() }
+        : item));
+    }
     setNoteText("");
     setNoteTimestamp(undefined);
     setEditingNoteId(null);
@@ -393,7 +375,7 @@ export default function Index() {
     if (activeView === "home") return note.state === "draft" || note.id === focusedNoteId;
     if (activeView === "trash") return note.state === "trash";
     return note.state === "saved" && note.folderId === activeView;
-  }).sort((first, second) => second.timestamp - first.timestamp);
+  }).sort((first, second) => first.timestamp - second.timestamp);
   const activeFolder = folders.find((folder) => folder.id === activeView);
   const viewTitle = activeView === "home" ? "작성 화면"
     : activeView === "trash" ? "휴지통"
@@ -472,14 +454,15 @@ export default function Index() {
           notes={visibleNotes}
           folders={folders}
           isDark={isDark}
+          isTrashView={activeView === "trash"}
           editing={isEditingCard}
           onDrop={onDrop}
           paddingTop={activeView === "home"
             ? insets.top + 12 + BUTTON_HEIGHT
-            : insets.top + BUTTON_HEIGHT + 36}
+            : insets.top + BUTTON_HEIGHT}
           paddingBottom={Math.max(insets.bottom, 18)}
           header={activeView !== "home" ? (
-            <View style={styles.viewHeading}>
+            <View style={[styles.viewHeading, visibleNotes.length === 0 && styles.emptyViewHeading]}>
               {visibleNotes.length === 0 && <NativeText style={{ color: isDark ? "#A1A1A6" : "#77777C" }}>메모가 없습니다.</NativeText>}
             </View>
           ) : null}
@@ -490,6 +473,7 @@ export default function Index() {
                 styles.editorCard,
                 styles.organizingCard,
                 isDark && styles.darkOrganizingCard,
+                editingNoteId === note.id && { backgroundColor: "#FFFFFF" },
               ]}
             >
               <View style={styles.cardHeader}>
@@ -497,7 +481,7 @@ export default function Index() {
                   accessibilityLabel="메모 작성 또는 수정 시간"
                   style={[
                     styles.noteTimestamp,
-                    { color: isDark ? "#A1A1A6" : "#77777C" },
+                    { color: "#77777C" },
                   ]}
                 >
                   {formatTimestamp(note.timestamp)}
@@ -506,7 +490,7 @@ export default function Index() {
                   title={editingNoteId === note.id ? "완료" : "편집"}
                   width={68}
                   height={52}
-                  glassTint={isDark ? "#343438" : "#F2F2F5"}
+                  glassTint="#F2F2F5"
                   onPress={() => {
                     if (editingNoteId === note.id) finishEditing();
                     else resumeEditing(note);
@@ -528,14 +512,14 @@ export default function Index() {
                   selectionColor={ACCENT}
                   style={[
                     styles.editorInput,
-                    { color: isDark ? "#F5F5F2" : "#171717" },
+                    { color: "#171717" },
                   ]}
                 />
               ) : (
                 <NativeText
                   style={[
                     styles.editorInput,
-                    { color: isDark ? "#F5F5F2" : "#171717" },
+                    { color: "#171717" },
                   ]}
                 >
                   {note.text}
@@ -580,8 +564,6 @@ export default function Index() {
           onClose={closeDrawer}
           onSelectView={selectView}
           onCreateFolder={createFolder}
-          onRenameFolder={renameFolder}
-          onRemoveFolder={removeFolder}
         />
       </View>
       </GestureDetector>
@@ -668,6 +650,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 26,
     paddingHorizontal: 15,
     paddingVertical: 6,
+    backgroundColor: "#F7F7F7",
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: "#CED1D6",
     borderRadius: 18,
@@ -687,5 +670,6 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   viewHeading: { marginTop: 26, marginHorizontal: 26, gap: 12 },
+  emptyViewHeading: { marginTop: 42 },
   appContent: { flex: 1 },
 });

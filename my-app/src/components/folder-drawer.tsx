@@ -6,7 +6,9 @@ import { Button as SwiftUIButton, HStack as SwiftHStack, Image as SwiftUIImage, 
 import { background, buttonStyle, font, foregroundStyle, frame, padding, shapes } from "@expo/ui/swift-ui/modifiers";
 import type { Folder, StoredNote } from "@/lib/local-store";
 
-const ACCENT = "#E7A000";
+import { FOLDER_ROW } from "./folder-row-appearance";
+
+const ACCENT = FOLDER_ROW.accent;
 
 function DrawerRow({ title, symbol, count, selected, dark, width, onPress }: {
   title: string;
@@ -17,12 +19,12 @@ function DrawerRow({ title, symbol, count, selected, dark, width, onPress }: {
   width: number;
   onPress: () => void;
 }) {
-  const iconColor = symbol === "trash" ? "#FF453A" : ACCENT;
-  const labelColor = dark ? "#F5F5F2" : "#171717";
-  const selectionColor = selected ? (dark ? "#343438" : "#E9E9ED") : "clear";
+  const iconColor = symbol === "trash" ? FOLDER_ROW.trash : ACCENT;
+  const labelColor = FOLDER_ROW.text[dark ? "dark" : "light"];
+  const selectionColor = selected ? FOLDER_ROW.selection[dark ? "dark" : "light"] : "clear";
   if (Platform.OS !== "ios") {
     return (
-      <Pressable onPress={onPress} style={[styles.drawerRow, { width }, selected && { backgroundColor: dark ? "#343438" : "#E9E9ED" }]}>
+      <Pressable onPress={onPress} style={[styles.drawerRow, { width }, selected && { backgroundColor: FOLDER_ROW.selection[dark ? "dark" : "light"] }]}>
         <NativeText style={[styles.drawerRowTitle, { color: labelColor }]}>{title}</NativeText>
         {count > 0 && <NativeText style={styles.drawerCount}>{count}</NativeText>}
       </Pressable>
@@ -31,13 +33,13 @@ function DrawerRow({ title, symbol, count, selected, dark, width, onPress }: {
   return (
     <Host style={{ width, height: 48 }}>
       <SwiftUIButton onPress={onPress} modifiers={[buttonStyle("plain"), frame({ width, height: 48 })]}>
-        <SwiftHStack spacing={12} modifiers={[
-          padding({ horizontal: 12 }),
+        <SwiftHStack spacing={FOLDER_ROW.iconGap} modifiers={[
+          padding({ horizontal: FOLDER_ROW.horizontalPadding }),
           frame({ width, height: 48 }),
-          background(selectionColor, shapes.roundedRectangle({ cornerRadius: 12 })),
+          background(selectionColor, shapes.roundedRectangle({ cornerRadius: FOLDER_ROW.radius })),
         ]}>
-          <SwiftUIImage systemName={symbol} size={20} color={iconColor} />
-          <SwiftUIText modifiers={[font({ size: 16, weight: "medium" }), foregroundStyle(labelColor)]}>{title}</SwiftUIText>
+          <SwiftUIImage systemName={symbol} size={FOLDER_ROW.iconSize} color={iconColor} />
+          <SwiftUIText modifiers={[font({ size: FOLDER_ROW.fontSize, weight: "medium" }), foregroundStyle(labelColor)]}>{title}</SwiftUIText>
           <SwiftSpacer />
           {count > 0 && <SwiftUIText modifiers={[font({ size: 13 }), foregroundStyle("#929299")]}>{count}</SwiftUIText>}
         </SwiftHStack>
@@ -60,8 +62,6 @@ type FolderDrawerProps = {
   onClose: () => void;
   onSelectView: (view: string) => void;
   onCreateFolder: () => void;
-  onRenameFolder: (folder: Folder) => void;
-  onRemoveFolder: (folder: Folder) => void;
 };
 
 export function FolderDrawer({
@@ -78,33 +78,27 @@ export function FolderDrawer({
   onClose: closeDrawer,
   onSelectView: selectView,
   onCreateFolder: createFolder,
-  onRenameFolder: renameFolder,
-  onRemoveFolder: removeFolder,
 }: FolderDrawerProps) {
   if (!visible) return null;
   return (
     <View style={styles.drawerRoot} pointerEvents="box-none">
       <Animated.View pointerEvents="none" style={[styles.drawerScrim, scrimStyle]} />
       <Pressable style={[styles.drawerDismissArea, { left: drawerWidth }]} onPress={closeDrawer} accessibilityLabel="서랍 닫기" />
-      <Animated.View style={[styles.drawer, { width: drawerWidth, backgroundColor: isDark ? "#1C1C1E" : "#F8F8FA", paddingTop: topInset + 16, paddingBottom: bottomInset + 16 }, drawerPanelStyle]}>
+      <Animated.View style={[styles.drawer, { width: drawerWidth, backgroundColor: FOLDER_ROW.panel[isDark ? "dark" : "light"], paddingTop: topInset + 16, paddingBottom: bottomInset + 16 }, drawerPanelStyle]}>
         <View style={styles.drawerHeader}>
           <NativeText style={[styles.drawerTitle, { color: isDark ? "#F5F5F2" : "#171717" }]}>폴더</NativeText>
+          <Pressable style={styles.addFolderButton} onPress={createFolder} accessibilityRole="button">
+            <NativeText style={{ color: ACCENT, fontSize: 15, fontWeight: "600" }}>＋ 폴더 추가</NativeText>
+          </Pressable>
         </View>
-        <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.drawerRows}>
+        <ScrollView style={styles.drawerScroll} contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.drawerRows}>
           <DrawerRow title="작성 화면" symbol="square.and.pencil" count={notes.filter((n) => n.state === "draft").length} selected={activeView === "home"} dark={isDark} width={drawerWidth - 36} onPress={() => selectView("home")} />
           <DrawerRow title="투두리스트" symbol="checklist" count={notes.filter((n) => n.state === "saved" && n.folderId === "todo").length} selected={activeView === "todo"} dark={isDark} width={drawerWidth - 36} onPress={() => selectView("todo")} />
           <DrawerRow title="휴지통" symbol="trash" count={notes.filter((n) => n.state === "trash").length} selected={activeView === "trash"} dark={isDark} width={drawerWidth - 36} onPress={() => selectView("trash")} />
           <View style={styles.drawerDivider} />
           {folders.filter((folder) => folder.kind === "custom").map((folder) => (
-            <View key={folder.id} style={styles.folderRow}>
-              <DrawerRow title={folder.name} symbol="folder" count={notes.filter((n) => n.state === "saved" && n.folderId === folder.id).length} selected={activeView === folder.id} dark={isDark} width={drawerWidth - 132} onPress={() => selectView(folder.id)} />
-              <Pressable onPress={() => renameFolder(folder)} hitSlop={8}><NativeText style={styles.folderAction}>이름</NativeText></Pressable>
-              <Pressable onPress={() => removeFolder(folder)} hitSlop={8}><NativeText style={styles.folderAction}>삭제</NativeText></Pressable>
-            </View>
+            <DrawerRow key={folder.id} title={folder.name} symbol="folder" count={notes.filter((n) => n.state === "saved" && n.folderId === folder.id).length} selected={activeView === folder.id} dark={isDark} width={drawerWidth - 36} onPress={() => selectView(folder.id)} />
           ))}
-          <Pressable style={styles.addFolderButton} onPress={createFolder}>
-            <NativeText style={{ color: ACCENT, fontSize: 16, fontWeight: "600" }}>＋  폴더 추가</NativeText>
-          </Pressable>
         </ScrollView>
       </Animated.View>
     </View>
@@ -115,15 +109,14 @@ const styles = StyleSheet.create({
   drawerRoot: { ...StyleSheet.absoluteFill, overflow: "hidden", zIndex: 10 },
   drawerScrim: { ...StyleSheet.absoluteFill, backgroundColor: "#000000" },
   drawerDismissArea: { ...StyleSheet.absoluteFill },
-  drawer: { width: "84%", maxWidth: 360, height: "100%", paddingHorizontal: 18, boxShadow: "5px 0px 18px rgba(0,0,0,0.06)" },
-  drawerHeader: { minHeight: 54, flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 6, marginBottom: 10 },
+  drawer: { width: "84%", maxWidth: 360, height: "100%", paddingHorizontal: 18 },
+  drawerHeader: { minHeight: 54, flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 6, marginBottom: 10, gap: 8 },
   drawerTitle: { fontSize: 27, fontWeight: "700" },
-  drawerRows: { gap: 4, paddingBottom: 16 },
-  drawerRow: { minHeight: 48, borderRadius: 12, flexDirection: "row", alignItems: "center", paddingHorizontal: 12, gap: 12 },
-  drawerRowTitle: { flex: 1, fontSize: 16, fontWeight: "500" },
+  drawerScroll: { flex: 1 },
+  drawerRows: { gap: FOLDER_ROW.gap, paddingBottom: 16 },
+  drawerRow: { minHeight: FOLDER_ROW.height, borderRadius: FOLDER_ROW.radius, flexDirection: "row", alignItems: "center", paddingHorizontal: FOLDER_ROW.horizontalPadding, gap: FOLDER_ROW.iconGap },
+  drawerRowTitle: { flex: 1, fontSize: FOLDER_ROW.fontSize, fontWeight: "500" },
   drawerCount: { color: "#8E8E93", fontSize: 13, fontVariant: ["tabular-nums"] },
   drawerDivider: { height: StyleSheet.hairlineWidth, backgroundColor: "#8E8E93", opacity: 0.35, marginVertical: 12 },
-  folderRow: { flexDirection: "row", alignItems: "center" },
-  folderAction: { color: "#8E8E93", fontSize: 12, paddingHorizontal: 5 },
-  addFolderButton: { minHeight: 48, justifyContent: "center", paddingHorizontal: 12, marginTop: 8 },
+  addFolderButton: { minHeight: 40, justifyContent: "center", paddingHorizontal: 8 },
 });
