@@ -5,6 +5,7 @@ public class LiquidGlassWheelModule: Module {
     Name("LiquidGlassWheel")
 
     Constant("hasNativeKebabMenu") { true }
+    Constant("hasNativeKebabSearch") { true }
 
     View(LiquidGlassWheelView.self) {
       Prop("visible") { (view: LiquidGlassWheelView, visible: Bool) in
@@ -13,7 +14,7 @@ public class LiquidGlassWheelModule: Module {
     }
 
     View(NativeKebabMenuView.self) {
-      Events("onDelete", "onSettings")
+      Events("onSearch", "onDelete", "onSettings", "onEmptyTrash", "onRenameFolder", "onDeleteFolder")
 
       Prop("isDark") { (view: NativeKebabMenuView, isDark: Bool) in
         view.setDarkAppearance(isDark)
@@ -21,6 +22,18 @@ public class LiquidGlassWheelModule: Module {
 
       Prop("showsDeleteAction") { (view: NativeKebabMenuView, showsDeleteAction: Bool) in
         view.setShowsDeleteAction(showsDeleteAction)
+      }
+
+      Prop("showsEmptyTrashAction") { (view: NativeKebabMenuView, showsEmptyTrashAction: Bool) in
+        view.setShowsEmptyTrashAction(showsEmptyTrashAction)
+      }
+
+      Prop("showsFolderActions") { (view: NativeKebabMenuView, showsFolderActions: Bool) in
+        view.setShowsFolderActions(showsFolderActions)
+      }
+
+      Prop("folderName") { (view: NativeKebabMenuView, folderName: String) in
+        view.setFolderName(folderName)
       }
     }
   }

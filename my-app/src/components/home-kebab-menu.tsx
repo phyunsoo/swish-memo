@@ -3,11 +3,12 @@ import { GlassButton } from "./glass-button";
 
 export type HomeKebabMenuProps = {
   onDelete: () => void;
+  onSearch: () => void;
   onSettings: () => void;
   isDark: boolean;
 };
 
-export function HomeKebabMenu({ onDelete, onSettings, isDark }: HomeKebabMenuProps) {
+export function HomeKebabMenu({ onSearch, onDelete, onSettings, isDark }: HomeKebabMenuProps) {
   return (
     <GlassButton
       label="더 보기"
@@ -16,6 +17,7 @@ export function HomeKebabMenu({ onDelete, onSettings, isDark }: HomeKebabMenuPro
       glassTint={isDark ? "#343438" : "#F2F2F5"}
       onPress={() => Alert.alert("더 보기", undefined, [
         { text: "설정", onPress: onSettings },
+        { text: "검색", onPress: onSearch },
         { text: "모두 삭제", style: "destructive", onPress: onDelete },
         { text: "닫기", style: "cancel" },
       ])}

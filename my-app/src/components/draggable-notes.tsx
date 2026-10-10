@@ -1,5 +1,5 @@
-import { useLayoutEffect, useMemo, type ReactNode } from "react";
-import { Keyboard, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
+import { Keyboard, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { Gesture, GestureDetector, type NativeGesture } from "react-native-gesture-handler";
 import Animated, {
   cancelAnimation, Easing, measure, ReduceMotion, useAnimatedRef,
@@ -11,6 +11,7 @@ import * as Haptics from "expo-haptics";
 import { FolderQuickMenu, type QuickMenuState } from "./folder-quick-menu";
 import { menuLayout, menuTargetAt, menuScrollDirection, menuMaxScrollOffset } from "./quick-menu-geometry";
 import type { Folder } from "@/lib/local-store";
+import type { SearchScrollTarget } from "@/lib/note-search";
 
 import { NOTE_TEXT_SIZE } from "@/lib/note-typography";
 
@@ -190,7 +191,7 @@ function DragPreview({ note, drag, isDark, noteFontSize }: { note: Note; drag: D
   );
 }
 
-export function DraggableNotes<T extends Note>({ notes, folders, renderNote, children, header, paddingTop, paddingBottom, isDark, isTrashView, editing, onDrop, noteFontSize = NOTE_TEXT_SIZE.default }: {
+export function DraggableNotes<T extends Note>({ notes, folders, renderNote, children, header, paddingTop, paddingBottom, isDark, isTrashView, editing, onDrop, searchTarget, noteFontSize = NOTE_TEXT_SIZE.default }: {
   notes: T[];
   folders: Folder[];
   renderNote: (note: T) => ReactNode;
@@ -203,8 +204,17 @@ export function DraggableNotes<T extends Note>({ notes, folders, renderNote, chi
   editing: boolean;
   onDrop: (noteId: number, targetId: number) => void;
   noteFontSize?: number;
+  searchTarget?: SearchScrollTarget | null;
 }) {
   const dimensions = useWindowDimensions();
+  const scrollRef = useRef<ScrollView>(null);
+  const rowPositions = useRef(new Map<number, number>());
+  const scrollToSearchTarget = useCallback(() => {
+    if (!searchTarget) return;
+    const y = rowPositions.current.get(searchTarget.noteId);
+    if (y !== undefined) scrollRef.current?.scrollTo({ y: Math.max(0, y + searchTarget.offset - paddingTop - 16), animated: true });
+  }, [searchTarget, paddingTop]);
+  useEffect(() => { scrollToSearchTarget(); }, [scrollToSearchTarget]);
   const rootRef = useAnimatedRef<View>();
   const nativeScroll = useMemo(() => Gesture.Native(), []);
   const menuOpacity = useSharedValue(0);
@@ -261,17 +271,23 @@ export function DraggableNotes<T extends Note>({ notes, folders, renderNote, chi
   return (
     <Animated.View ref={rootRef} collapsable={false} style={styles.container}>
       <GestureDetector gesture={nativeScroll}>
-        <Animated.ScrollView style={styles.container}
+        <Animated.ScrollView ref={scrollRef} style={styles.container}
           contentInsetAdjustmentBehavior="never" keyboardShouldPersistTaps="handled"
           automaticallyAdjustKeyboardInsets
+          onContentSizeChange={scrollToSearchTarget}
           removeClippedSubviews={false}
           contentContainerStyle={{ flexGrow: 1, paddingTop, paddingBottom }}>
           {header}
           {notes.map((note) => (
-            <DraggableRow key={note.id} note={note} drag={drag} nativeScroll={nativeScroll}
+            <View key={note.id} onLayout={(event) => {
+              rowPositions.current.set(note.id, event.nativeEvent.layout.y);
+              if (searchTarget?.noteId === note.id) scrollToSearchTarget();
+            }}>
+            <DraggableRow note={note} drag={drag} nativeScroll={nativeScroll}
               rootRef={rootRef} paddingTop={paddingTop} paddingBottom={paddingBottom} folderCount={folders.length} disabled={editing} onDrop={onDrop}>
               {renderNote(note)}
             </DraggableRow>
+            </View>
           ))}
           {children}
         </Animated.ScrollView>

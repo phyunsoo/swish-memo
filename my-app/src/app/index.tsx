@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Keyboard,
@@ -12,8 +12,11 @@ import {
 } from "react-native";
 import { Stack, useRouter } from "expo-router";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { NoteSearch, SearchNoteText } from "@/components/note-search";
+import { EMPTY_TEXT_MATCHES } from "@/lib/note-search";
+import { useNoteSearch } from "@/hooks/use-note-search";
 import { DraggableNotes } from "@/components/draggable-notes";
-import type { StoredNote } from "@/lib/local-store";
+import type { Folder, StoredNote } from "@/lib/local-store";
 import { useMemoStorage } from "@/hooks/use-memo-storage";
 import { FolderDrawer } from "@/components/folder-drawer";
 import { hasFolderName, isValidTodoText, updateNoteContent } from "@/lib/memo-rules";
@@ -125,6 +128,13 @@ export default function Index() {
   const drawerGestureStart = useSharedValue(0);
   const drawerGestureAllowed = useSharedValue(false);
   const [activeView, setActiveView] = useState("home");
+  const visibleNotes = useMemo(() => notes.filter((note) => {
+    if (activeView === "home") return note.state === "draft" || note.id === focusedNoteId;
+    if (activeView === "trash") return note.state === "trash";
+    return note.state === "saved" && note.folderId === activeView;
+  }).sort((first, second) => first.timestamp - second.timestamp), [notes, activeView, focusedNoteId]);
+  const search = useNoteSearch(visibleNotes, editingNoteId, editingText);
+  const { close: resetSearch } = search;
   const isEditingCard = editingNoteId !== null;
   const hasContent = noteText.trim().length > 0;
   const appShiftStyle = useAnimatedStyle(() => ({
@@ -147,6 +157,7 @@ export default function Index() {
   };
 
   const drawerPanGesture = Gesture.Pan()
+    .enabled(!search.visible)
     .activeOffsetX([-12, 12])
     .failOffsetY([-10, 10])
     .onBegin(() => {
@@ -267,9 +278,71 @@ export default function Index() {
 
   const openSettings = () => { Keyboard.dismiss(); router.push("/settings"); };
 
+  const confirmEmptyTrash = () => {
+    Alert.alert("휴지통 비우기", "휴지통에 있는 모든 메모를 영구 삭제할까요?", [
+      { text: "취소", style: "cancel" },
+      {
+        text: "비우기",
+        style: "destructive",
+        onPress: () => setNotes((current) => current.filter((note) => note.state !== "trash")),
+      },
+    ]);
+  };
+
+  const renameFolder = (folder: Folder, rawName: string) => {
+    const name = rawName.trim();
+    if (!name || name === folder.name) return;
+    if (hasFolderName(folders, name, folder.id)) {
+      Alert.alert("이미 있는 폴더", "같은 이름의 폴더가 있습니다.");
+      return;
+    }
+    setFolders((current) => current.map((item) => item.id === folder.id ? { ...item, name } : item));
+  };
+
+  const requestRenameFolder = (folder: Folder) => {
+    Alert.prompt("폴더 이름 변경", "폴더 이름을 입력하세요.", (name) => renameFolder(folder, name), "plain-text", folder.name);
+  };
+
+  const confirmDeleteFolder = (folder: Folder) => {
+    Alert.alert("폴더 삭제", `‘${folder.name}’ 폴더를 삭제할까요? 폴더 안의 메모는 휴지통으로 이동합니다.`, [
+      { text: "취소", style: "cancel" },
+      {
+        text: "폴더 삭제",
+        style: "destructive",
+        onPress: () => {
+          const now = Date.now();
+          setNotes((current) => current.map((note) => note.folderId === folder.id && note.state === "saved"
+            ? { ...note, folderId: null, state: "trash", timestamp: now }
+            : note));
+          setFolders((current) => current.filter((item) => item.id !== folder.id));
+          if (activeView === folder.id) {
+            setActiveView("home");
+            setFocusedNoteId(null);
+          }
+        },
+      },
+    ]);
+  };
+
   const saveEditingNote = () => {
     if (editingNoteId === null) return;
     setNotes((current) => updateNoteContent(current, editingNoteId, editingText, editingTimestamp));
+  };
+
+  const createNote = () => {
+    if (!hasContent) return;
+    const note: Note = {
+      id: allocateNoteId(),
+      text: noteText,
+      timestamp: noteTimestamp ?? Date.now(),
+      folderId: null,
+      state: "draft",
+    };
+    setNotes((current) => [...current, note]);
+    setNoteText("");
+    setNoteTimestamp(undefined);
+    inputRef.current?.blur();
+    Keyboard.dismiss();
   };
 
   const finishEditing = () => {
@@ -281,18 +354,6 @@ export default function Index() {
       }
       saveEditingNote();
       setEditingNoteId(null);
-    } else {
-      if (!hasContent) return;
-      const note: Note = {
-        id: allocateNoteId(),
-        text: noteText,
-        timestamp: noteTimestamp ?? Date.now(),
-        folderId: null,
-        state: "draft",
-      };
-      setNotes((current) => [...current, note]);
-      setNoteText("");
-      setNoteTimestamp(undefined);
     }
     inputRef.current?.blur();
     editInputRef.current?.blur();
@@ -310,15 +371,20 @@ export default function Index() {
     setFocusedNoteId(note.id);
   };
 
-  const visibleNotes = notes.filter((note) => {
-    if (activeView === "home") return note.state === "draft" || note.id === focusedNoteId;
-    if (activeView === "trash") return note.state === "trash";
-    return note.state === "saved" && note.folderId === activeView;
-  }).sort((first, second) => first.timestamp - second.timestamp);
   const activeFolder = folders.find((folder) => folder.id === activeView);
   const viewTitle = activeView === "home" ? "작성 화면"
     : activeView === "trash" ? "휴지통"
       : activeFolder?.name ?? "폴더";
+
+  const openSearch = () => {
+    inputRef.current?.blur();
+    editInputRef.current?.blur();
+    search.open();
+  };
+  const closeSearch = useCallback(() => {
+    Keyboard.dismiss();
+    resetSearch();
+  }, [resetSearch]);
 
   const selectView = (view: string) => {
     if (editingNoteId !== null) {
@@ -338,7 +404,8 @@ export default function Index() {
       <GestureDetector gesture={drawerPanGesture}>
       <View style={[styles.screen, { backgroundColor: isDark ? "#111110" : "#FFFFFF" }]}>
         <Animated.View style={[styles.appContent, appShiftStyle]}>
-        <View
+        <View style={styles.appContent}>
+        {!search.visible && <View
           pointerEvents="box-none"
           style={[
             styles.toolbarOverlay,
@@ -371,21 +438,32 @@ export default function Index() {
               </View>
             )}
             <View pointerEvents="box-none" style={styles.toolbarActions}>
-              {hasContent && !isEditingCard && (
+              {hasContent && (
                 <GlassTextButton
                   title="완료"
                   glassTint={isDark ? "#343438" : "#F2F2F5"}
-                  onPress={finishEditing}
+                  onPress={createNote}
                 />
               )}
               {activeView === "home" ? (
-                <HomeKebabMenu isDark={isDark} onDelete={confirmMoveAllDraftsToTrash} onSettings={() => { Keyboard.dismiss(); router.push("/settings"); }} />
+                <HomeKebabMenu onSearch={openSearch} isDark={isDark} onDelete={confirmMoveAllDraftsToTrash} onSettings={() => { Keyboard.dismiss(); router.push("/settings"); }} />
               ) : (
-                <FolderKebabMenu isDark={isDark} onSettings={openSettings} />
+                <FolderKebabMenu
+                  onSearch={openSearch}
+                  isDark={isDark}
+                  onSettings={openSettings}
+                  onEmptyTrash={confirmEmptyTrash}
+                  showEmptyTrash={activeView === "trash"}
+                  onRenameFolder={(name) => { if (activeFolder) renameFolder(activeFolder, name); }}
+                  onRequestRenameFolder={() => { if (activeFolder) requestRenameFolder(activeFolder); }}
+                  folderName={activeFolder?.name}
+                  onDeleteFolder={() => { if (activeFolder) confirmDeleteFolder(activeFolder); }}
+                  showFolderActions={activeFolder?.kind === "custom"}
+                />
               )}
             </View>
           </View>
-        </View>
+        </View>}
 
         <DraggableNotes
           notes={visibleNotes}
@@ -393,12 +471,13 @@ export default function Index() {
           isDark={isDark}
           noteFontSize={noteFontSize}
           isTrashView={activeView === "trash"}
-          editing={isEditingCard}
+          editing={isEditingCard || search.visible}
+          searchTarget={search.target}
           onDrop={onDrop}
           paddingTop={activeView === "home"
             ? insets.top + 12 + BUTTON_HEIGHT
             : insets.top + BUTTON_HEIGHT}
-          paddingBottom={Math.max(insets.bottom, 18)}
+          paddingBottom={Math.max(insets.bottom, 18) + (search.visible ? 160 : 0)}
           header={activeView !== "home" ? (
             <View style={[styles.viewHeading, visibleNotes.length === 0 && styles.emptyViewHeading]}>
               {visibleNotes.length === 0 && <NativeText style={{ color: isDark ? "#A1A1A6" : "#77777C" }}>메모가 없습니다.</NativeText>}
@@ -414,7 +493,7 @@ export default function Index() {
                 editingNoteId === note.id && { backgroundColor: "#FFFFFF" },
               ]}
             >
-              <View style={styles.cardHeader}>
+              <View style={[styles.cardHeader, search.visible && { minHeight: BUTTON_HEIGHT }]}>
                 <NativeText
                   accessibilityLabel="메모 작성 또는 수정 시간"
                   style={[
@@ -424,23 +503,24 @@ export default function Index() {
                 >
                   {formatTimestamp(note.timestamp)}
                 </NativeText>
-                <GlassTextButton
+                {!search.visible && <GlassTextButton
                   title={editingNoteId === note.id ? "완료" : "편집"}
-                  width={68}
-                  height={52}
+                  width={TEXT_BUTTON_WIDTH}
+                  height={BUTTON_HEIGHT}
                   glassTint="#F2F2F5"
                   onPress={() => {
                     if (editingNoteId === note.id) finishEditing();
                     else resumeEditing(note);
                   }}
-                />
+                />}
               </View>
-              {editingNoteId === note.id ? (
+              {editingNoteId === note.id && (
                 <NativeTextInput
                   ref={editInputRef}
                   accessibilityLabel="메모 내용 편집"
                   autoFocus
                   multiline
+                  editable={!search.visible}
                   value={editingText}
                   onChangeText={(text) => {
                     setEditingText(text);
@@ -452,9 +532,21 @@ export default function Index() {
                     styles.editorInput,
                     noteTextStyle,
                     { color: "#171717" },
+                    search.visible && { display: "none" },
                   ]}
                 />
-              ) : (
+              )}
+              {search.visible ? (
+                <SearchNoteText
+                  text={note.id === editingNoteId ? editingText : note.text}
+                  noteId={note.id}
+                  matches={search.matchesByNote.get(note.id) ?? EMPTY_TEXT_MATCHES}
+                  selectedStart={search.selectedMatch?.noteId === note.id ? search.selectedMatch.start : null}
+                  contentOffset={styles.organizingCard.marginTop}
+                  style={[styles.editorInput, noteTextStyle, { color: "#171717" }]}
+                  onSelectedOffset={search.reportOffset}
+                />
+              ) : editingNoteId !== note.id ? (
                 <NativeText
                   style={[
                     styles.editorInput,
@@ -464,7 +556,7 @@ export default function Index() {
                 >
                   {note.text}
                 </NativeText>
-              )}
+              ) : null}
             </View>
           )}
         >
@@ -473,9 +565,9 @@ export default function Index() {
               <NativeTextInput
                 ref={inputRef}
                 accessibilityLabel="새 메모 내용"
+                editable={!search.visible}
                 accessibilityHint="떠오른 생각을 자유롭게 입력하세요"
                 autoFocus
-                editable={!isEditingCard}
                 multiline
                 onChangeText={handleTextChange}
                 value={noteText}
@@ -493,7 +585,16 @@ export default function Index() {
             </View>
           ) : null}
         </DraggableNotes>
+        </View>
         </Animated.View>
+        {search.visible && <NoteSearch
+          folderName={viewTitle} isDark={isDark} topInset={insets.top} bottomInset={insets.bottom}
+          query={search.query} total={search.total} activeIndex={search.activeIndex}
+          onQueryChange={search.changeQuery}
+          onPrevious={search.previous}
+          onNext={search.next}
+          onClose={closeSearch}
+        />}
 
         <FolderDrawer
           visible={drawerVisible}

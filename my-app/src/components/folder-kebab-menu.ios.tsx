@@ -7,11 +7,23 @@ import NativeKebabMenuView from "../../modules/liquid-glass-wheel/src/NativeKeba
 import { GLASS_BUTTON_SIZE } from "./glass-button";
 import type { FolderKebabMenuProps } from "./folder-kebab-menu";
 
-export function FolderKebabMenu({ onSettings, isDark }: FolderKebabMenuProps) {
+export function FolderKebabMenu({ onSearch, onSettings, onEmptyTrash, showEmptyTrash, onRenameFolder, onRequestRenameFolder, folderName, onDeleteFolder, showFolderActions, isDark }: FolderKebabMenuProps) {
   const usesNativeGlass = isLiquidGlassAvailable();
 
   if (NativeKebabMenuView) {
-    return <NativeKebabMenuView style={styles.menuButton} isDark={isDark} showsDeleteAction={false} onSettings={onSettings} />;
+    return <NativeKebabMenuView
+      style={styles.menuButton}
+      isDark={isDark}
+      showsDeleteAction={false}
+      showsEmptyTrashAction={showEmptyTrash}
+      showsFolderActions={showFolderActions}
+      folderName={folderName}
+      onSearch={onSearch}
+      onSettings={onSettings}
+      onEmptyTrash={onEmptyTrash}
+      onRenameFolder={(event) => onRenameFolder(event.nativeEvent.name)}
+      onDeleteFolder={onDeleteFolder}
+    />;
   }
 
   return (
@@ -28,6 +40,16 @@ export function FolderKebabMenu({ onSettings, isDark }: FolderKebabMenuProps) {
           ]}
         >
           <SwiftUIButton label="설정" systemImage="gearshape" onPress={onSettings} />
+          <SwiftUIButton label="검색" systemImage="magnifyingglass" onPress={onSearch} />
+          {showEmptyTrash && (
+            <SwiftUIButton label="휴지통 비우기" systemImage="trash" role="destructive" onPress={onEmptyTrash} />
+          )}
+          {showFolderActions && (
+            <>
+              <SwiftUIButton label="폴더 이름 변경" systemImage="pencil" onPress={onRequestRenameFolder} />
+              <SwiftUIButton label="폴더 삭제" systemImage="trash" role="destructive" onPress={onDeleteFolder} />
+            </>
+          )}
         </SwiftUIMenu>
       </Host>
     </View>

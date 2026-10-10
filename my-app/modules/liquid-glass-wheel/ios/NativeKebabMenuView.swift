@@ -3,13 +3,20 @@ import UIKit
 
 /// UIKit owns the glass, its shadow, and the menu transition. No extra shadow layer is used.
 final class NativeKebabMenuView: ExpoView {
+  let onSearch = EventDispatcher()
   let onDelete = EventDispatcher()
   let onSettings = EventDispatcher()
+  let onEmptyTrash = EventDispatcher()
+  let onRenameFolder = EventDispatcher()
+  let onDeleteFolder = EventDispatcher()
 
   private var menuButton: RestoringGlassMenuButton!
   private var isMenuPresented = false
   private var isDark = false
   private var showsDeleteAction = true
+  private var showsEmptyTrashAction = false
+  private var showsFolderActions = false
+  private var folderName = ""
 
   required init(appContext: AppContext? = nil) {
     super.init(appContext: appContext)
@@ -40,16 +47,64 @@ final class NativeKebabMenuView: ExpoView {
     menuButton.menu = makeMenu()
   }
 
+  func setShowsEmptyTrashAction(_ value: Bool) {
+    showsEmptyTrashAction = value
+    menuButton.menu = makeMenu()
+  }
+
+  func setShowsFolderActions(_ value: Bool) {
+    showsFolderActions = value
+    menuButton.menu = makeMenu()
+  }
+
+  func setFolderName(_ value: String) {
+    folderName = value
+  }
+
   private func makeMenu() -> UIMenu {
     var actions = [
-      UIAction(title: "설정", image: UIImage(systemName: "gearshape")) { [weak self] _ in self?.onSettings() }
+      UIAction(title: "설정", image: UIImage(systemName: "gearshape")) { [weak self] _ in self?.onSettings() },
+      UIAction(title: "검색", image: UIImage(systemName: "magnifyingglass")) { [weak self] _ in self?.onSearch() }
     ]
     if showsDeleteAction {
       actions.append(UIAction(title: "모두 삭제", image: UIImage(systemName: "trash"), attributes: .destructive) { [weak self] _ in
         self?.onDelete()
       })
     }
+    if showsEmptyTrashAction {
+      actions.append(UIAction(title: "휴지통 비우기", image: UIImage(systemName: "trash"), attributes: .destructive) { [weak self] _ in
+        self?.onEmptyTrash()
+      })
+    }
+    if showsFolderActions {
+      actions.append(UIAction(title: "폴더 이름 변경", image: UIImage(systemName: "pencil")) { [weak self] _ in
+        self?.presentFolderNameAlert()
+      })
+      actions.append(UIAction(title: "폴더 삭제", image: UIImage(systemName: "trash"), attributes: .destructive) { [weak self] _ in
+        self?.onDeleteFolder()
+      })
+    }
     return UIMenu(children: actions)
+  }
+
+  private func presentFolderNameAlert() {
+    guard let window = window, var presenter = window.rootViewController else { return }
+    while let presented = presenter.presentedViewController {
+      presenter = presented
+    }
+
+    let alert = UIAlertController(title: "폴더 이름 변경", message: "폴더 이름을 입력하세요.", preferredStyle: .alert)
+    alert.addTextField { [weak self] field in
+      field.text = self?.folderName
+
+      field.clearButtonMode = .whileEditing
+    }
+    alert.addAction(UIAlertAction(title: "취소", style: .cancel))
+    alert.addAction(UIAlertAction(title: "확인", style: .default) { [weak self, weak alert] _ in
+      guard let name = alert?.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else { return }
+      self?.onRenameFolder(["name": name])
+    })
+    presenter.present(alert, animated: true)
   }
 
   private func installButton() {
