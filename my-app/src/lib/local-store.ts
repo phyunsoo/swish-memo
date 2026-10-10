@@ -1,5 +1,6 @@
 import * as SQLite from "expo-sqlite";
 import { normalizeNoteFontSize, NOTE_TEXT_SIZE } from "./note-typography";
+import { DEFAULT_NOTE_PLACEHOLDER } from "./note-placeholder";
 
 const databasePromise = SQLite.openDatabaseAsync("swish-memo.db");
 
@@ -23,6 +24,7 @@ export type AppSnapshot = {
   notes: StoredNote[];
   draftText: string;
   noteFontSize: number;
+  notePlaceholder: string;
 };
 
 export const INITIAL_SNAPSHOT: AppSnapshot = {
@@ -32,6 +34,7 @@ export const INITIAL_SNAPSHOT: AppSnapshot = {
   notes: [],
   draftText: "",
   noteFontSize: NOTE_TEXT_SIZE.default,
+  notePlaceholder: DEFAULT_NOTE_PLACEHOLDER,
 };
 
 export async function loadSnapshot(): Promise<AppSnapshot> {
@@ -54,6 +57,9 @@ export async function loadSnapshot(): Promise<AppSnapshot> {
       notes: Array.isArray(parsed.notes) ? parsed.notes : [],
       draftText: typeof parsed.draftText === "string" ? parsed.draftText : "",
       noteFontSize: normalizeNoteFontSize(parsed.noteFontSize),
+      notePlaceholder: typeof parsed.notePlaceholder === "string"
+        ? parsed.notePlaceholder
+        : DEFAULT_NOTE_PLACEHOLDER,
     };
   } catch {
     return INITIAL_SNAPSHOT;

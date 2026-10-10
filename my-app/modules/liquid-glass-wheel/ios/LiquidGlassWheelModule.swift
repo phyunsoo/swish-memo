@@ -13,10 +13,14 @@ public class LiquidGlassWheelModule: Module {
     }
 
     View(NativeKebabMenuView.self) {
-      Events("onDelete", "onTextSize")
+      Events("onDelete", "onSettings")
 
       Prop("isDark") { (view: NativeKebabMenuView, isDark: Bool) in
         view.setDarkAppearance(isDark)
+      }
+
+      Prop("showsDeleteAction") { (view: NativeKebabMenuView, showsDeleteAction: Bool) in
+        view.setShowsDeleteAction(showsDeleteAction)
       }
     }
   }

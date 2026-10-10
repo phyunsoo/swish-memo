@@ -7,11 +7,11 @@ import NativeKebabMenuView from "../../modules/liquid-glass-wheel/src/NativeKeba
 import { GLASS_BUTTON_SIZE } from "./glass-button";
 import type { HomeKebabMenuProps } from "./home-kebab-menu";
 
-export function HomeKebabMenu({ onDelete, onTextSize, isDark }: HomeKebabMenuProps) {
+export function HomeKebabMenu({ onDelete, onSettings, isDark }: HomeKebabMenuProps) {
   const usesNativeGlass = isLiquidGlassAvailable();
 
   if (NativeKebabMenuView) {
-    return <NativeKebabMenuView style={styles.homeNativeMenuButton} isDark={isDark} onDelete={onDelete} onTextSize={onTextSize} />;
+    return <NativeKebabMenuView style={styles.homeNativeMenuButton} isDark={isDark} onDelete={onDelete} onSettings={onSettings} />;
   }
 
   return (
@@ -27,8 +27,7 @@ export function HomeKebabMenu({ onDelete, onTextSize, isDark }: HomeKebabMenuPro
             frame({ width: GLASS_BUTTON_SIZE, height: GLASS_BUTTON_SIZE }),
           ]}
         >
-          <SwiftUIButton label="텍스트 크기" systemImage="textformat.size" onPress={onTextSize} />
-          <SwiftUIButton label="설정" systemImage="gearshape" onPress={() => {}} />
+          <SwiftUIButton label="설정" systemImage="gearshape" onPress={onSettings} />
           <SwiftUIButton
             label="모두 삭제"
             systemImage="trash"

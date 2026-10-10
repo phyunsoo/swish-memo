@@ -4,11 +4,12 @@ import UIKit
 /// UIKit owns the glass, its shadow, and the menu transition. No extra shadow layer is used.
 final class NativeKebabMenuView: ExpoView {
   let onDelete = EventDispatcher()
-  let onTextSize = EventDispatcher()
+  let onSettings = EventDispatcher()
 
   private var menuButton: RestoringGlassMenuButton!
   private var isMenuPresented = false
   private var isDark = false
+  private var showsDeleteAction = true
 
   required init(appContext: AppContext? = nil) {
     super.init(appContext: appContext)
@@ -34,6 +35,23 @@ final class NativeKebabMenuView: ExpoView {
     menuButton.setNeedsUpdateConfiguration()
   }
 
+  func setShowsDeleteAction(_ value: Bool) {
+    showsDeleteAction = value
+    menuButton.menu = makeMenu()
+  }
+
+  private func makeMenu() -> UIMenu {
+    var actions = [
+      UIAction(title: "설정", image: UIImage(systemName: "gearshape")) { [weak self] _ in self?.onSettings() }
+    ]
+    if showsDeleteAction {
+      actions.append(UIAction(title: "모두 삭제", image: UIImage(systemName: "trash"), attributes: .destructive) { [weak self] _ in
+        self?.onDelete()
+      })
+    }
+    return UIMenu(children: actions)
+  }
+
   private func installButton() {
     let button = RestoringGlassMenuButton(type: .system)
     var configuration: UIButton.Configuration
@@ -51,15 +69,7 @@ final class NativeKebabMenuView: ExpoView {
     button.overrideUserInterfaceStyle = isDark ? .dark : .light
     button.accessibilityLabel = "더 보기"
     button.showsMenuAsPrimaryAction = true
-    button.menu = UIMenu(children: [
-      UIAction(title: "설정", image: UIImage(systemName: "gearshape")) { _ in },
-      UIAction(title: "텍스트 크기", image: UIImage(systemName: "textformat.size")) { [weak self] _ in
-        self?.onTextSize()
-      },
-      UIAction(title: "모두 삭제", image: UIImage(systemName: "trash"), attributes: .destructive) { [weak self] _ in
-        self?.onDelete()
-      }
-    ])
+    button.menu = makeMenu()
     button.onMenuWillDisplay = { [weak self] in
       self?.isMenuPresented = true
       self?.window?.endEditing(true)

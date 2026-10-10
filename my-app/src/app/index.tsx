@@ -8,10 +8,9 @@ import {
   Text as NativeText,
   TextInput as NativeTextInput,
   View,
-  useColorScheme,
   useWindowDimensions,
 } from "react-native";
-import { Stack } from "expo-router";
+import { Stack, useRouter } from "expo-router";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { DraggableNotes } from "@/components/draggable-notes";
 import type { StoredNote } from "@/lib/local-store";
@@ -25,8 +24,9 @@ import { GlassView, isLiquidGlassAvailable } from "expo-glass-effect";
 import { Button, Host, Text } from "@expo/ui";
 import { GlassButton, GLASS_BUTTON_SIZE } from "@/components/glass-button";
 import { HomeKebabMenu } from "@/components/home-kebab-menu";
+import { FolderKebabMenu } from "@/components/folder-kebab-menu";
 import { getNoteTextStyle, NOTE_TEXT_SIZE, NOTE_LINE_HEIGHT } from "@/lib/note-typography";
-import { TextSizeSheet } from "@/components/text-size-sheet";
+import { useAppearance } from "@/lib/appearance";
 import {
   buttonBorderShape,
   buttonStyle,
@@ -37,8 +37,6 @@ import {
 const ACCENT = "#E7A000";
 const BUTTON_HEIGHT = GLASS_BUTTON_SIZE;
 const TEXT_BUTTON_WIDTH = 72;
-const PLACEHOLDER =
-  "떠오른 생각\n\n기록은 가볍게,\n정리는 나중에.\n\n지금 생각난 것을 먼저 적어두기.";
 const DRAWER_SPRING = { duration: 500, dampingRatio: 0.8, reduceMotion: ReduceMotion.System };
 
 type Note = StoredNote;
@@ -111,11 +109,11 @@ export default function Index() {
   const insets = useSafeAreaInsets();
   const { width: windowWidth } = useWindowDimensions();
   const drawerWidth = Math.min(windowWidth * 0.84, 360);
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === "dark";
+  const router = useRouter();
+  const { isDark } = useAppearance();
   const inputRef = useRef<InstanceType<typeof NativeTextInput>>(null);
   const editInputRef = useRef<InstanceType<typeof NativeTextInput>>(null);
-  const { notes, setNotes, folders, setFolders, noteText, setNoteText, noteFontSize, setNoteFontSize, allocateNoteId } = useMemoStorage();
+  const { notes, setNotes, folders, setFolders, noteText, setNoteText, noteFontSize, notePlaceholder, allocateNoteId } = useMemoStorage();
   const noteTextStyle = getNoteTextStyle(noteFontSize);
   const [noteTimestamp, setNoteTimestamp] = useState<number | undefined>();
   const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
@@ -123,7 +121,6 @@ export default function Index() {
   const [editingTimestamp, setEditingTimestamp] = useState<number>(0);
   const [focusedNoteId, setFocusedNoteId] = useState<number | null>(null);
   const [drawerVisible, setDrawerVisible] = useState(false);
-  const [textSizeVisible, setTextSizeVisible] = useState(false);
   const drawerProgress = useSharedValue(0);
   const drawerGestureStart = useSharedValue(0);
   const drawerGestureAllowed = useSharedValue(false);
@@ -268,27 +265,7 @@ export default function Index() {
     ]);
   };
 
-  const openMoreMenu = () => {
-    const focused = notes.find((note) => note.id === (editingNoteId ?? focusedNoteId));
-    const actions: Parameters<typeof Alert.alert>[2] = [];
-    if (focused && focused.state !== "trash") {
-      actions.push({ text: "현재 메모 삭제", style: "destructive", onPress: () => {
-        setNotes((current) => current.map((note) => note.id === focused.id
-          ? { ...note, folderId: null, state: "trash", timestamp: Date.now() }
-          : note));
-        setEditingNoteId(null);
-        setFocusedNoteId(null);
-      } });
-    } else if (noteText.trim()) {
-      actions.push({ text: "작성 중인 내용 삭제", style: "destructive", onPress: () => {
-        setNoteText("");
-        setNoteTimestamp(undefined);
-      } });
-    }
-    actions.push({ text: "설정", onPress: () => {} });
-    actions.push({ text: "닫기", style: "cancel" });
-    Alert.alert("더 보기", undefined, actions);
-  };
+  const openSettings = () => { Keyboard.dismiss(); router.push("/settings"); };
 
   const saveEditingNote = () => {
     if (editingNoteId === null) return;
@@ -402,15 +379,9 @@ export default function Index() {
                 />
               )}
               {activeView === "home" ? (
-                <HomeKebabMenu isDark={isDark} onDelete={confirmMoveAllDraftsToTrash} onTextSize={() => setTextSizeVisible(true)} />
+                <HomeKebabMenu isDark={isDark} onDelete={confirmMoveAllDraftsToTrash} onSettings={() => { Keyboard.dismiss(); router.push("/settings"); }} />
               ) : (
-                <GlassButton
-                  label="더 보기"
-                  symbol="ellipsis"
-                  tint={isDark ? "#F5F5F2" : "#171717"}
-                  glassTint={isDark ? "#343438" : "#F2F2F5"}
-                  onPress={openMoreMenu}
-                />
+                <FolderKebabMenu isDark={isDark} onSettings={openSettings} />
               )}
             </View>
           </View>
@@ -515,7 +486,7 @@ export default function Index() {
               {noteText.length === 0 && (
                 <View pointerEvents="none" style={styles.newNotePlaceholderWrap}>
                   <NativeText style={[styles.editorInput, noteTextStyle, { color: isDark ? "#747474" : "#A0A0A0" }]}>
-                    {PLACEHOLDER}
+                    {notePlaceholder}
                   </NativeText>
                 </View>
               )}
@@ -548,14 +519,6 @@ export default function Index() {
             let index = 0;
             return current.map((folder) => folder.kind === "custom" ? ordered[index++] : folder);
           })}
-        />
-        <TextSizeSheet
-          visible={textSizeVisible}
-          onClose={() => setTextSizeVisible(false)}
-          value={noteFontSize}
-          onValueChange={setNoteFontSize}
-          preview="예시 텍스트입니다."
-          isDark={isDark}
         />
       </View>
       </GestureDetector>

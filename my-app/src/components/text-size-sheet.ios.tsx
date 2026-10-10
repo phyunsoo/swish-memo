@@ -1,14 +1,14 @@
 import { NOTE_TEXT_SIZE } from "@/lib/note-typography";
 import { Host } from "@expo/ui";
 import { BottomSheet, NavigationStack, Slider, Text, VStack, ZStack } from "@expo/ui/swift-ui";
-import { accessibilityLabel, background, font, frame, lineLimit, padding, presentationDetents, presentationDragIndicator, shapes } from "@expo/ui/swift-ui/modifiers";
+import { accessibilityLabel, background, font, frame, lineLimit, padding, preferredColorScheme, presentationDetents, presentationDragIndicator, shapes } from "@expo/ui/swift-ui/modifiers";
 import type { TextSizeSheetProps } from "./text-size-sheet";
 
 export function TextSizeSheet({ visible, onClose, value, onValueChange, preview, isDark }: TextSizeSheetProps) {
   return (
-    <Host style={{ position: "absolute" }}>
+    <Host style={{ position: "absolute" }} colorScheme={isDark ? "dark" : "light"}>
       <BottomSheet isPresented={visible} onIsPresentedChange={(presented) => { if (!presented) onClose(); }}>
-        <NavigationStack modifiers={[presentationDetents(["medium"]), presentationDragIndicator("visible")]}>
+        <NavigationStack modifiers={[presentationDetents(["medium"]), presentationDragIndicator("visible"), preferredColorScheme(isDark ? "dark" : "light")]}>
           <VStack spacing={28} modifiers={[
               frame({ maxWidth: Infinity, maxHeight: Infinity, alignment: "top" }),
               padding({ horizontal: 24, top: 12 }),
