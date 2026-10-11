@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Host } from "@expo/ui";
+import { Host, Switch } from "@expo/ui";
 import { Button, Form, HStack, Image, Section, Spacer, Text, VStack } from "@expo/ui/swift-ui";
 import {
   accessibilityLabel, alignmentGuide, buttonStyle, font, foregroundStyle, frame, padding,
@@ -42,7 +42,7 @@ function SettingsActionRow({ title, value, onPress }: { title: string; value: st
   );
 }
 
-export default function SettingsScreen({ mode, onModeChange, noteFontSize, onNoteFontSizeChange, notePlaceholder, onNotePlaceholderChange, onClose }: SettingsScreenProps) {
+export default function SettingsScreen({ mode, onModeChange, noteFontSize, onNoteFontSizeChange, notePlaceholder, onNotePlaceholderChange, markdownEnabled, onMarkdownEnabledChange, onClose }: SettingsScreenProps) {
   const { isDark } = useAppearance();
   const [activeSheet, setActiveSheet] = useState<SettingsSheet | null>(null);
   const backgroundColor = isDark ? "#000000" : "#F2F2F7";
@@ -81,6 +81,12 @@ export default function SettingsScreen({ mode, onModeChange, noteFontSize, onNot
                 title="텍스트 크기"
                 value={`${Math.round(noteFontSize)} pt`}
                 onPress={() => setActiveSheet("textSize")}
+              />
+              <Switch
+                label="Markdown 문법"
+                value={markdownEnabled}
+                onValueChange={onMarkdownEnabledChange}
+                modifiers={rowModifiers}
               />
             </Section>
             <Section title="정보">

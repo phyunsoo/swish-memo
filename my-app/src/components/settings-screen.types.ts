@@ -7,5 +7,7 @@ export type SettingsScreenProps = {
   notePlaceholder: string;
   onNoteFontSizeChange: (size: number) => void;
   onNotePlaceholderChange: (value: string) => void;
+  markdownEnabled: boolean;
+  onMarkdownEnabledChange: (value: boolean) => void;
   onClose: () => void;
 };

@@ -9,6 +9,7 @@ function useMemoStorageState() {
   const [noteText, setNoteText] = useState("");
   const [noteFontSize, setNoteFontSize] = useState<number>(NOTE_TEXT_SIZE.default);
   const [notePlaceholder, setNotePlaceholder] = useState(INITIAL_SNAPSHOT.notePlaceholder);
+  const [markdownEnabled, setMarkdownEnabled] = useState(INITIAL_SNAPSHOT.markdownEnabled);
   const [storageReady, setStorageReady] = useState(false);
 
   useEffect(() => {
@@ -20,6 +21,7 @@ function useMemoStorageState() {
       setNoteText(snapshot.draftText);
       setNoteFontSize(snapshot.noteFontSize);
       setNotePlaceholder(snapshot.notePlaceholder);
+      setMarkdownEnabled(snapshot.markdownEnabled);
       nextNoteId.current = Math.max(0, ...snapshot.notes.map((note) => note.id + 1));
       setStorageReady(true);
     }).catch((error) => {
@@ -31,13 +33,13 @@ function useMemoStorageState() {
 
   useEffect(() => {
     if (!storageReady) return;
-    const snapshot: AppSnapshot = { folders, notes, draftText: noteText, noteFontSize, notePlaceholder };
+    const snapshot: AppSnapshot = { folders, notes, draftText: noteText, noteFontSize, notePlaceholder, markdownEnabled };
     void saveSnapshot(snapshot).catch((error) => console.warn("메모 저장에 실패했습니다.", error));
-  }, [folders, notes, noteText, noteFontSize, notePlaceholder, storageReady]);
+  }, [folders, notes, noteText, noteFontSize, notePlaceholder, markdownEnabled, storageReady]);
 
   const allocateNoteId = () => nextNoteId.current++;
 
-  return { notes, setNotes, folders, setFolders, noteText, setNoteText, noteFontSize, setNoteFontSize, notePlaceholder, setNotePlaceholder, allocateNoteId };
+  return { notes, setNotes, folders, setFolders, noteText, setNoteText, noteFontSize, setNoteFontSize, notePlaceholder, setNotePlaceholder, markdownEnabled, setMarkdownEnabled, allocateNoteId };
 }
 
 const MemoStorageContext = createContext<ReturnType<typeof useMemoStorageState> | null>(null);

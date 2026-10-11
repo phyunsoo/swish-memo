@@ -13,6 +13,7 @@ import {
 import { Stack, useRouter } from "expo-router";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { NoteSearch, SearchNoteText } from "@/components/note-search";
+import { NoteMarkdown } from "@/components/note-markdown";
 import { EMPTY_TEXT_MATCHES } from "@/lib/note-search";
 import { useNoteSearch } from "@/hooks/use-note-search";
 import { DraggableNotes } from "@/components/draggable-notes";
@@ -116,7 +117,7 @@ export default function Index() {
   const { isDark } = useAppearance();
   const inputRef = useRef<InstanceType<typeof NativeTextInput>>(null);
   const editInputRef = useRef<InstanceType<typeof NativeTextInput>>(null);
-  const { notes, setNotes, folders, setFolders, noteText, setNoteText, noteFontSize, notePlaceholder, allocateNoteId } = useMemoStorage();
+  const { notes, setNotes, folders, setFolders, noteText, setNoteText, noteFontSize, notePlaceholder, markdownEnabled, allocateNoteId } = useMemoStorage();
   const noteTextStyle = getNoteTextStyle(noteFontSize);
   const [noteTimestamp, setNoteTimestamp] = useState<number | undefined>();
   const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
@@ -547,15 +548,13 @@ export default function Index() {
                   onSelectedOffset={search.reportOffset}
                 />
               ) : editingNoteId !== note.id ? (
-                <NativeText
-                  style={[
-                    styles.editorInput,
-                    noteTextStyle,
-                    { color: "#171717" },
-                  ]}
-                >
-                  {note.text}
-                </NativeText>
+                markdownEnabled ? (
+                  <NoteMarkdown text={note.text} fontSize={noteFontSize} />
+                ) : (
+                  <NativeText selectable style={[styles.editorInput, noteTextStyle, { color: "#171717" }]}>
+                    {note.text}
+                  </NativeText>
+                )
               ) : null}
             </View>
           )}

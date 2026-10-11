@@ -25,6 +25,7 @@ export type AppSnapshot = {
   draftText: string;
   noteFontSize: number;
   notePlaceholder: string;
+  markdownEnabled: boolean;
 };
 
 export const INITIAL_SNAPSHOT: AppSnapshot = {
@@ -35,6 +36,7 @@ export const INITIAL_SNAPSHOT: AppSnapshot = {
   draftText: "",
   noteFontSize: NOTE_TEXT_SIZE.default,
   notePlaceholder: DEFAULT_NOTE_PLACEHOLDER,
+  markdownEnabled: false,
 };
 
 export async function loadSnapshot(): Promise<AppSnapshot> {
@@ -57,6 +59,7 @@ export async function loadSnapshot(): Promise<AppSnapshot> {
       notes: Array.isArray(parsed.notes) ? parsed.notes : [],
       draftText: typeof parsed.draftText === "string" ? parsed.draftText : "",
       noteFontSize: normalizeNoteFontSize(parsed.noteFontSize),
+      markdownEnabled: parsed.markdownEnabled === true,
       notePlaceholder: typeof parsed.notePlaceholder === "string"
         ? parsed.notePlaceholder
         : DEFAULT_NOTE_PLACEHOLDER,
