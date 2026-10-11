@@ -1,4 +1,5 @@
 import type { StoredNote } from "./local-store";
+import { newTodoGeneration } from "./memo-rules";
 
 type OrderedNote = Pick<StoredNote, "sortOrder" | "timestamp">;
 
@@ -39,9 +40,13 @@ export function moveNotesToDestination(
     && note.state === destination.state
     && (destination.state !== "saved" || note.folderId === destination.folderId)));
   // The caller supplies the source's display order, including any unsaved draft last.
-  const updates = new Map(moving.map((note) => [
-    note.id, { ...note, ...destination, sortOrder: order++ },
-  ]));
+  const updates = new Map(moving.map((note) => [note.id, {
+    ...note, ...destination, sortOrder: order++,
+    deletedAt: destination.state === "trash" ? Date.now() : undefined,
+    todoGeneration: destination.state === "saved" && destination.folderId === "todo"
+      ? (note.state === "saved" && note.folderId === "todo" ? note.todoGeneration : newTodoGeneration())
+      : note.todoGeneration,
+  }]));
   const result = notes.map((note) => {
     const updated = updates.get(note.id);
     updates.delete(note.id);

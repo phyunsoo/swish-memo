@@ -17,7 +17,7 @@ export function GlassButton({
   onPress,
 }: {
   label: string;
-  symbol: "folder" | "ellipsis";
+  symbol: "folder" | "ellipsis" | "circle";
   width?: number;
   tint?: string;
   glassTint?: string;
@@ -71,7 +71,7 @@ export function GlassButton({
             />
           ) : (
             <Text textStyle={{ fontSize: ICON_SIZE, color: tint }}>
-              {symbol === "ellipsis" ? "⋮" : "📁"}
+              {symbol === "ellipsis" ? "⋮" : symbol === "circle" ? "○" : "📁"}
             </Text>
           )}
         </Button>

@@ -1,14 +1,24 @@
 import * as SQLite from "expo-sqlite";
+import { requireOptionalNativeModule } from "expo";
+import { Platform } from "react-native";
 import { normalizeNoteFontSize, NOTE_TEXT_SIZE } from "./note-typography";
 import { DEFAULT_NOTE_PLACEHOLDER } from "./note-placeholder";
 
 const databasePromise = SQLite.openDatabaseAsync("swish-memo.db");
+const nativeStore = Platform.OS === "ios" ? requireOptionalNativeModule<{
+  hasSharedMemoStore?: boolean;
+  initializeMemoStore(json: string): Promise<string>;
+  loadMemoSnapshot(): Promise<string | null>;
+  saveMemoSnapshot(json: string): Promise<string>;
+}>("MemoStore") : null;
+const sharedStore = nativeStore?.hasSharedMemoStore ? nativeStore : null;
 
 export type Folder = {
   id: string;
   name: string;
   kind: "todo" | "custom";
   createdAt: number;
+  noteOrder?: "recent" | "manual";
 };
 
 export type StoredNote = {
@@ -16,6 +26,8 @@ export type StoredNote = {
   text: string;
   timestamp: number;
   sortOrder?: number;
+  todoGeneration?: string;
+  deletedAt?: number;
   folderId: string | null;
   state: "draft" | "saved" | "trash";
 };
@@ -31,7 +43,7 @@ export type AppSnapshot = {
 
 export const INITIAL_SNAPSHOT: AppSnapshot = {
   folders: [
-    { id: "todo", name: "투두리스트", kind: "todo", createdAt: 0 },
+    { id: "todo", name: "투두리스트", kind: "todo", createdAt: 0, noteOrder: "recent" },
   ],
   notes: [],
   draftText: "",
@@ -40,7 +52,7 @@ export const INITIAL_SNAPSHOT: AppSnapshot = {
   markdownEnabled: false,
 };
 
-export async function loadSnapshot(): Promise<AppSnapshot> {
+async function loadLegacySnapshot(): Promise<AppSnapshot> {
   const db = await databasePromise;
   const version = await db.getFirstAsync<{ user_version: number }>("PRAGMA user_version");
   if ((version?.user_version ?? 0) < 1) {
@@ -70,10 +82,25 @@ export async function loadSnapshot(): Promise<AppSnapshot> {
   }
 }
 
-export async function saveSnapshot(snapshot: AppSnapshot): Promise<void> {
+export async function loadSnapshot(): Promise<AppSnapshot> {
+  if (!sharedStore) return loadLegacySnapshot();
+  const existing = await sharedStore.loadMemoSnapshot();
+  if (existing) return normalizeSnapshot(existing);
+  const legacy = await loadLegacySnapshot();
+  return normalizeSnapshot(await sharedStore.initializeMemoStore(JSON.stringify(legacy)));
+}
+
+function normalizeSnapshot(json: string): AppSnapshot {
+  const parsed = JSON.parse(json) as AppSnapshot;
+  return { ...INITIAL_SNAPSHOT, ...parsed, noteFontSize: normalizeNoteFontSize(parsed.noteFontSize) };
+}
+
+export async function saveSnapshot(snapshot: AppSnapshot): Promise<AppSnapshot> {
+  if (sharedStore) return normalizeSnapshot(await sharedStore.saveMemoSnapshot(JSON.stringify(snapshot)));
   const db = await databasePromise;
   await db.runAsync(
     "INSERT INTO app_state (id, value) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET value = excluded.value",
     JSON.stringify(snapshot),
   );
+  return snapshot;
 }

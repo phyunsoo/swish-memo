@@ -1,6 +1,8 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { INITIAL_SNAPSHOT, loadSnapshot, saveSnapshot, type AppSnapshot, type Folder, type StoredNote } from "@/lib/local-store";
 import { NOTE_TEXT_SIZE } from "@/lib/note-typography";
+import { Alert, AppState } from "react-native";
+import { createMemoPersistence, mergeWidgetCompletions } from "@/lib/memo-persistence";
 
 function useMemoStorageState() {
   const nextNoteId = useRef(0);
@@ -11,6 +13,13 @@ function useMemoStorageState() {
   const [notePlaceholder, setNotePlaceholder] = useState(INITIAL_SNAPSHOT.notePlaceholder);
   const [markdownEnabled, setMarkdownEnabled] = useState(INITIAL_SNAPSHOT.markdownEnabled);
   const [storageReady, setStorageReady] = useState(false);
+  const [persistence] = useState(() => createMemoPersistence<AppSnapshot>({
+    save: saveSnapshot,
+    load: loadSnapshot,
+    onSnapshot: (snapshot) => setNotes((current) => mergeWidgetCompletions(current, snapshot.notes)),
+    onError: (error, operation) => console.warn(operation === "save"
+      ? "메모 저장에 실패했습니다." : "위젯 완료 상태를 불러오지 못했습니다.", error),
+  }));
 
   useEffect(() => {
     let active = true;
@@ -26,7 +35,7 @@ function useMemoStorageState() {
       setStorageReady(true);
     }).catch((error) => {
       console.warn("메모 저장소를 불러오지 못했습니다.", error);
-      setStorageReady(true);
+      Alert.alert("메모를 불러오지 못했어요", "앱을 다시 실행해 주세요. 기존 데이터를 보호하기 위해 저장을 중지했습니다.");
     });
     return () => { active = false; };
   }, []);
@@ -34,10 +43,22 @@ function useMemoStorageState() {
   useEffect(() => {
     if (!storageReady) return;
     const snapshot: AppSnapshot = { folders, notes, draftText: noteText, noteFontSize, notePlaceholder, markdownEnabled };
-    void saveSnapshot(snapshot).catch((error) => console.warn("메모 저장에 실패했습니다.", error));
-  }, [folders, notes, noteText, noteFontSize, notePlaceholder, markdownEnabled, storageReady]);
+    void persistence.save(snapshot);
+  }, [folders, notes, noteText, noteFontSize, notePlaceholder, markdownEnabled, storageReady, persistence]);
 
-  const allocateNoteId = () => nextNoteId.current++;
+  useEffect(() => {
+    if (!storageReady) return;
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state !== "active") return;
+      void persistence.refresh();
+    });
+    return () => subscription.remove();
+  }, [storageReady, persistence]);
+
+  const allocateNoteId = () => {
+    nextNoteId.current = Math.max(Date.now(), nextNoteId.current + 1);
+    return nextNoteId.current;
+  };
 
   return { notes, setNotes, folders, setFolders, noteText, setNoteText, noteFontSize, setNoteFontSize, notePlaceholder, setNotePlaceholder, markdownEnabled, setMarkdownEnabled, allocateNoteId };
 }

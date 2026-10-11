@@ -1,7 +1,18 @@
 import type { Folder, StoredNote } from "./local-store";
+import { requireOptionalNativeModule } from "expo";
+
+const native = requireOptionalNativeModule<{ memoCharacterCount?: (text: string) => number }>("MemoStore");
 
 export function isValidTodoText(text: string): boolean {
-  return !text.includes("\n") && Array.from(text).length <= 30;
+  const count = native?.memoCharacterCount?.(text) ?? (typeof Intl.Segmenter === "function"
+    ? Array.from(new Intl.Segmenter("ko", { granularity: "grapheme" }).segment(text)).length
+    : Array.from(text).length);
+  return text.trim().length > 0 && !/[\r\n\u2028\u2029]/u.test(text)
+    && count <= 30;
+}
+
+export function newTodoGeneration(): string {
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
 export function hasFolderName(folders: Folder[], name: string, excludedId?: string): boolean {

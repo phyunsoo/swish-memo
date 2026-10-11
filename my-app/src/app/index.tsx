@@ -1,3 +1,6 @@
+import { NoteCard } from "@/components/note-card";
+import { GlassTextButton, TEXT_BUTTON_WIDTH } from "@/components/glass-text-button";
+import { useNoteActions } from "@/hooks/use-note-actions";
 import { useCallback, useMemo, useRef, useState } from "react";
 import {
   Alert,
@@ -10,115 +13,41 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
-import { Stack, useRouter } from "expo-router";
+import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import { NoteSearch, SearchNoteText } from "@/components/note-search";
-import { NoteMarkdown } from "@/components/note-markdown";
-import { EMPTY_TEXT_MATCHES } from "@/lib/note-search";
+import { NoteSearch } from "@/components/note-search";
 import { useNoteSearch } from "@/hooks/use-note-search";
 import { DraggableNotes } from "@/components/draggable-notes";
 import type { Folder, StoredNote } from "@/lib/local-store";
 import { useMemoStorage } from "@/hooks/use-memo-storage";
 import { FolderDrawer } from "@/components/folder-drawer";
 import { hasFolderName, isValidTodoText, updateNoteContent } from "@/lib/memo-rules";
-import { applyNoteOrder, compareNoteOrder, moveNotesToDestination, nextNoteOrder } from "@/lib/note-order";
+import { compareNoteOrder, moveNotesToDestination, nextNoteOrder } from "@/lib/note-order";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, { ReduceMotion, useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
 import { scheduleOnRN } from "react-native-worklets";
-import { GlassView, isLiquidGlassAvailable } from "expo-glass-effect";
-import { Button, Host, Text } from "@expo/ui";
 import { GlassButton, GLASS_BUTTON_SIZE } from "@/components/glass-button";
 import { HomeKebabMenu } from "@/components/home-kebab-menu";
 import { FolderKebabMenu } from "@/components/folder-kebab-menu";
 import { getNoteTextStyle, NOTE_TEXT_SIZE, NOTE_LINE_HEIGHT } from "@/lib/note-typography";
 import { useAppearance } from "@/lib/appearance";
-import {
-  buttonBorderShape,
-  buttonStyle,
-  controlSize,
-  frame,
-} from "@expo/ui/swift-ui/modifiers";
-
 const ACCENT = "#E7A000";
 const BUTTON_HEIGHT = GLASS_BUTTON_SIZE;
-const TEXT_BUTTON_WIDTH = 72;
 const DRAWER_SPRING = { duration: 500, dampingRatio: 0.8, reduceMotion: ReduceMotion.System };
 
 type Note = StoredNote;
-
-function formatTimestamp(timestamp: number) {
-  return new Date(timestamp).toLocaleString("ko-KR", {
-    year: "numeric",
-    month: "numeric",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
-function GlassTextButton({
-  title,
-  glassTint,
-  onPress,
-  width = TEXT_BUTTON_WIDTH,
-  height = BUTTON_HEIGHT,
-}: {
-  title: string;
-  glassTint: string;
-  onPress: () => void;
-  width?: number;
-  height?: number;
-}) {
-  const usesNativeGlass = Platform.OS === "ios" && isLiquidGlassAvailable();
-
-  return (
-    <View style={[styles.glassButton, styles.doneButton, { width, height }]}>
-      {!usesNativeGlass && (
-        <GlassView
-          pointerEvents="none"
-          glassEffectStyle="regular"
-          isInteractive
-          tintColor={glassTint}
-          style={styles.glassSurface}
-        />
-      )}
-      <Host
-        matchContents
-        ignoreSafeArea="all"
-        seedColor={ACCENT}
-        accessible
-        accessibilityRole="button"
-        accessibilityLabel={title}
-      >
-        <Button
-          onPress={onPress}
-          variant="text"
-          modifiers={[
-            buttonStyle(usesNativeGlass ? "glass" : "plain"),
-            buttonBorderShape("capsule"),
-            frame({ width, height }),
-            controlSize(height < BUTTON_HEIGHT ? "regular" : "large"),
-          ]}
-          style={{ ...styles.doneNativeButton, width, height }}
-        >
-          <Text textStyle={{ fontSize: 17, fontWeight: "600", color: ACCENT }}>
-            {title}
-          </Text>
-        </Button>
-      </Host>
-    </View>
-  );
-}
 
 export default function Index() {
   const insets = useSafeAreaInsets();
   const { width: windowWidth } = useWindowDimensions();
   const drawerWidth = Math.min(windowWidth * 0.84, 360);
   const router = useRouter();
+  const { view } = useLocalSearchParams<{ view?: string }>();
   const { isDark } = useAppearance();
   const inputRef = useRef<InstanceType<typeof NativeTextInput>>(null);
   const editInputRef = useRef<InstanceType<typeof NativeTextInput>>(null);
   const { notes, setNotes, folders, setFolders, noteText, setNoteText, noteFontSize, notePlaceholder, markdownEnabled, allocateNoteId } = useMemoStorage();
+  const { completeTodo, reorderNotes } = useNoteActions();
   const noteTextStyle = getNoteTextStyle(noteFontSize);
   const [noteTimestamp, setNoteTimestamp] = useState<number | undefined>();
   const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
@@ -131,11 +60,21 @@ export default function Index() {
   const drawerGestureAllowed = useSharedValue(false);
   const [activeView, setActiveView] = useState("home");
   const [reordering, setReordering] = useState(false);
+  useFocusEffect(useCallback(() => {
+    if (view !== "todo") return;
+    setActiveView("todo");
+    setFocusedNoteId(null);
+    setEditingNoteId(null);
+    Keyboard.dismiss();
+    router.setParams({ view: undefined });
+  }, [view, router, setActiveView, setFocusedNoteId, setEditingNoteId]));
   const visibleNotes = useMemo(() => notes.filter((note) => {
     if (activeView === "home") return note.state === "draft" || note.id === focusedNoteId;
     if (activeView === "trash") return note.state === "trash";
     return note.state === "saved" && note.folderId === activeView;
-  }).sort(compareNoteOrder), [notes, activeView, focusedNoteId]);
+  }).sort(activeView === "todo" && folders.find((folder) => folder.id === "todo")?.noteOrder === "recent"
+    ? (first, second) => second.timestamp - first.timestamp
+    : compareNoteOrder), [notes, activeView, focusedNoteId, folders]);
   const search = useNoteSearch(visibleNotes, editingNoteId, editingText);
   const { close: resetSearch } = search;
   const isEditingCard = editingNoteId !== null;
@@ -484,7 +423,7 @@ export default function Index() {
           reordering={reordering}
           searchTarget={search.target}
           onDrop={onDrop}
-          onReorder={(ids) => setNotes((current) => applyNoteOrder(current, ids))}
+          onReorder={(ids) => reorderNotes(ids, activeView)}
           paddingTop={activeView === "home"
             ? insets.top + 12 + BUTTON_HEIGHT
             : insets.top + BUTTON_HEIGHT}
@@ -495,79 +434,27 @@ export default function Index() {
             </View>
           ) : null}
           renderNote={(note, reorderHandle) => (
-            <View
-              key={note.id}
-              style={[
-                styles.editorCard,
-                styles.organizingCard,
-                isDark && styles.darkOrganizingCard,
-                editingNoteId === note.id && { backgroundColor: "#FFFFFF" },
-              ]}
-            >
-              <View style={[styles.cardHeader, search.visible && { minHeight: BUTTON_HEIGHT }]}>
-                <NativeText
-                  accessibilityLabel="메모 작성 또는 수정 시간"
-                  style={[
-                    styles.noteTimestamp,
-                    { color: "#77777C" },
-                  ]}
-                >
-                  {formatTimestamp(note.timestamp)}
-                </NativeText>
-                {!search.visible && !reordering && <GlassTextButton
-                  title={editingNoteId === note.id ? "완료" : "편집"}
-                  width={TEXT_BUTTON_WIDTH}
-                  height={BUTTON_HEIGHT}
-                  glassTint="#F2F2F5"
-                  onPress={() => {
-                    if (editingNoteId === note.id) finishEditing();
-                    else resumeEditing(note);
-                  }}
-                />}
-                {reorderHandle}
-              </View>
-              {editingNoteId === note.id && (
-                <NativeTextInput
-                  ref={editInputRef}
-                  accessibilityLabel="메모 내용 편집"
-                  autoFocus
-                  multiline
-                  editable={!search.visible}
-                  value={editingText}
-                  onChangeText={(text) => {
-                    setEditingText(text);
-                    setEditingTimestamp(Date.now());
-                  }}
-                  scrollEnabled={false}
-                  selectionColor={ACCENT}
-                  style={[
-                    styles.editorInput,
-                    noteTextStyle,
-                    { color: "#171717" },
-                    search.visible && { display: "none" },
-                  ]}
-                />
-              )}
-              {search.visible ? (
-                <SearchNoteText
-                  text={note.id === editingNoteId ? editingText : note.text}
-                  noteId={note.id}
-                  matches={search.matchesByNote.get(note.id) ?? EMPTY_TEXT_MATCHES}
-                  selectedStart={search.selectedMatch?.noteId === note.id ? search.selectedMatch.start : null}
-                  contentOffset={styles.organizingCard.marginTop}
-                  style={[styles.editorInput, noteTextStyle, { color: "#171717" }]}
-                  onSelectedOffset={search.reportOffset}
-                />
-              ) : editingNoteId !== note.id ? (
-                markdownEnabled ? (
-                  <NoteMarkdown text={note.text} fontSize={noteFontSize} />
-                ) : (
-                  <NativeText selectable style={[styles.editorInput, noteTextStyle, { color: "#171717" }]}>
-                    {note.text}
-                  </NativeText>
-                )
-              ) : null}
-            </View>
+            <NoteCard
+              note={note}
+              reorderHandle={reorderHandle}
+              isDark={isDark}
+              editing={editingNoteId === note.id}
+              reordering={reordering}
+              editingText={editingText}
+              editInputRef={editInputRef}
+              noteFontSize={noteFontSize}
+              markdownEnabled={markdownEnabled}
+              search={search}
+              onComplete={() => {
+                completeTodo(note.id);
+                setFocusedNoteId(null);
+              }}
+              onEdit={() => editingNoteId === note.id ? finishEditing() : resumeEditing(note)}
+              onChangeText={(text) => {
+                setEditingText(text);
+                setEditingTimestamp(Date.now());
+              }}
+            />
           )}
         >
           {activeView === "home" ? (
@@ -671,26 +558,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   toolbarTitle: { fontSize: 18, fontWeight: "600", textAlign: "center" },
-  glassButton: {
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: BUTTON_HEIGHT / 2,
-  },
-  glassSurface: {
-    ...StyleSheet.absoluteFill,
-    borderRadius: BUTTON_HEIGHT / 2,
-  },
-  doneButton: {
-    width: TEXT_BUTTON_WIDTH,
-    height: BUTTON_HEIGHT,
-    borderRadius: BUTTON_HEIGHT / 2,
-  },
-  doneNativeButton: {
-    width: TEXT_BUTTON_WIDTH,
-    height: BUTTON_HEIGHT,
-    paddingHorizontal: 0,
-    paddingVertical: 0,
-  },
   editorCard: {
     marginTop: 24,
     marginHorizontal: 26,
@@ -716,30 +583,6 @@ const styles = StyleSheet.create({
     top: 10,
     left: 0,
     right: 0,
-  },
-  organizingCard: {
-    marginTop: 24,
-    marginHorizontal: 26,
-    paddingHorizontal: 15,
-    paddingVertical: 6,
-    backgroundColor: "#FAFAFA",
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "#CED1D6",
-    borderRadius: 18,
-  },
-  darkOrganizingCard: {
-    borderColor: "#4A4A4D",
-  },
-  cardHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 8,
-  },
-  noteTimestamp: {
-    flexShrink: 1,
-    fontSize: 13,
-    marginRight: 8,
   },
   viewHeading: { marginTop: 26, marginHorizontal: 26, gap: 12 },
   emptyViewHeading: { marginTop: 42 },
