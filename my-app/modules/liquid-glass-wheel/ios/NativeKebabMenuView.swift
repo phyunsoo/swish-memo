@@ -4,6 +4,7 @@ import UIKit
 /// UIKit owns the glass, its shadow, and the menu transition. No extra shadow layer is used.
 final class NativeKebabMenuView: ExpoView {
   let onSearch = EventDispatcher()
+  let onReorder = EventDispatcher()
   let onDelete = EventDispatcher()
   let onSettings = EventDispatcher()
   let onEmptyTrash = EventDispatcher()
@@ -64,7 +65,8 @@ final class NativeKebabMenuView: ExpoView {
   private func makeMenu() -> UIMenu {
     var actions = [
       UIAction(title: "설정", image: UIImage(systemName: "gearshape")) { [weak self] _ in self?.onSettings() },
-      UIAction(title: "검색", image: UIImage(systemName: "magnifyingglass")) { [weak self] _ in self?.onSearch() }
+      UIAction(title: "검색", image: UIImage(systemName: "magnifyingglass")) { [weak self] _ in self?.onSearch() },
+      UIAction(title: "메모 순서 바꾸기", image: UIImage(systemName: "arrow.up.arrow.down")) { [weak self] _ in self?.onReorder() }
     ]
     if showsDeleteAction {
       actions.append(UIAction(title: "모두 삭제", image: UIImage(systemName: "trash"), attributes: .destructive) { [weak self] _ in

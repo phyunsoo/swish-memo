@@ -15,6 +15,7 @@ export type StoredNote = {
   id: number;
   text: string;
   timestamp: number;
+  sortOrder?: number;
   folderId: string | null;
   state: "draft" | "saved" | "trash";
 };

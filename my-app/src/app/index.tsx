@@ -21,6 +21,7 @@ import type { Folder, StoredNote } from "@/lib/local-store";
 import { useMemoStorage } from "@/hooks/use-memo-storage";
 import { FolderDrawer } from "@/components/folder-drawer";
 import { hasFolderName, isValidTodoText, updateNoteContent } from "@/lib/memo-rules";
+import { applyNoteOrder, compareNoteOrder, moveNotesToDestination, nextNoteOrder } from "@/lib/note-order";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, { ReduceMotion, useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
 import { scheduleOnRN } from "react-native-worklets";
@@ -129,11 +130,12 @@ export default function Index() {
   const drawerGestureStart = useSharedValue(0);
   const drawerGestureAllowed = useSharedValue(false);
   const [activeView, setActiveView] = useState("home");
+  const [reordering, setReordering] = useState(false);
   const visibleNotes = useMemo(() => notes.filter((note) => {
     if (activeView === "home") return note.state === "draft" || note.id === focusedNoteId;
     if (activeView === "trash") return note.state === "trash";
     return note.state === "saved" && note.folderId === activeView;
-  }).sort((first, second) => first.timestamp - second.timestamp), [notes, activeView, focusedNoteId]);
+  }).sort(compareNoteOrder), [notes, activeView, focusedNoteId]);
   const search = useNoteSearch(visibleNotes, editingNoteId, editingText);
   const { close: resetSearch } = search;
   const isEditingCard = editingNoteId !== null;
@@ -233,9 +235,10 @@ export default function Index() {
     if (trashTarget && activeView === "trash" && note.state === "trash") {
       setNotes((current) => current.filter((item) => item.id !== noteId));
     } else {
-      setNotes((current) => current.map((item) => item.id === noteId
-        ? { ...item, folderId, state, timestamp: Date.now() }
-        : item));
+      setNotes((current) => {
+        const moving = current.find((item) => item.id === noteId);
+        return moving ? moveNotesToDestination(current, [{ ...moving, timestamp: Date.now() }], { folderId, state }) : current;
+      });
     }
     setNoteText("");
     setNoteTimestamp(undefined);
@@ -260,12 +263,12 @@ export default function Index() {
             state: "trash",
           } : null;
           setNotes((current) => {
-            const updated = current.map((note) => {
-              if (note.state !== "draft" && note.id !== focusedNoteId && note.id !== editingNoteId) return note;
+            const moving = current.filter((note) => note.state === "draft" || note.id === focusedNoteId || note.id === editingNoteId).sort(compareNoteOrder).map((note) => {
               const text = note.id === editingNoteId ? editingText : note.text;
-              return { ...note, text, folderId: null, state: "trash" as const, timestamp: now };
+              return { ...note, text, timestamp: now };
             });
-            return unsavedNote ? [...updated, unsavedNote] : updated;
+            if (unsavedNote) moving.push(unsavedNote);
+            return moveNotesToDestination(current, moving, { folderId: null, state: "trash" });
           });
           setNoteText("");
           setNoteTimestamp(undefined);
@@ -312,9 +315,10 @@ export default function Index() {
         style: "destructive",
         onPress: () => {
           const now = Date.now();
-          setNotes((current) => current.map((note) => note.folderId === folder.id && note.state === "saved"
-            ? { ...note, folderId: null, state: "trash", timestamp: now }
-            : note));
+          setNotes((current) => moveNotesToDestination(current,
+            current.filter((note) => note.folderId === folder.id && note.state === "saved").sort(compareNoteOrder)
+              .map((note) => ({ ...note, timestamp: now })),
+            { folderId: null, state: "trash" }));
           setFolders((current) => current.filter((item) => item.id !== folder.id));
           if (activeView === folder.id) {
             setActiveView("home");
@@ -336,6 +340,7 @@ export default function Index() {
       id: allocateNoteId(),
       text: noteText,
       timestamp: noteTimestamp ?? Date.now(),
+      sortOrder: nextNoteOrder(visibleNotes),
       folderId: null,
       state: "draft",
     };
@@ -446,11 +451,14 @@ export default function Index() {
                   onPress={createNote}
                 />
               )}
-              {activeView === "home" ? (
-                <HomeKebabMenu onSearch={openSearch} isDark={isDark} onDelete={confirmMoveAllDraftsToTrash} onSettings={() => { Keyboard.dismiss(); router.push("/settings"); }} />
+              {reordering ? (
+                <GlassTextButton title="완료" width={TEXT_BUTTON_WIDTH} glassTint={isDark ? "#343438" : "#F2F2F5"} onPress={() => setReordering(false)} />
+              ) : activeView === "home" ? (
+                <HomeKebabMenu onSearch={openSearch} isDark={isDark} onReorder={() => setReordering(true)} onDelete={confirmMoveAllDraftsToTrash} onSettings={() => { Keyboard.dismiss(); router.push("/settings"); }} />
               ) : (
                 <FolderKebabMenu
                   onSearch={openSearch}
+                  onReorder={() => setReordering(true)}
                   isDark={isDark}
                   onSettings={openSettings}
                   onEmptyTrash={confirmEmptyTrash}
@@ -473,8 +481,10 @@ export default function Index() {
           noteFontSize={noteFontSize}
           isTrashView={activeView === "trash"}
           editing={isEditingCard || search.visible}
+          reordering={reordering}
           searchTarget={search.target}
           onDrop={onDrop}
+          onReorder={(ids) => setNotes((current) => applyNoteOrder(current, ids))}
           paddingTop={activeView === "home"
             ? insets.top + 12 + BUTTON_HEIGHT
             : insets.top + BUTTON_HEIGHT}
@@ -484,7 +494,7 @@ export default function Index() {
               {visibleNotes.length === 0 && <NativeText style={{ color: isDark ? "#A1A1A6" : "#77777C" }}>메모가 없습니다.</NativeText>}
             </View>
           ) : null}
-          renderNote={(note) => (
+          renderNote={(note, reorderHandle) => (
             <View
               key={note.id}
               style={[
@@ -504,7 +514,7 @@ export default function Index() {
                 >
                   {formatTimestamp(note.timestamp)}
                 </NativeText>
-                {!search.visible && <GlassTextButton
+                {!search.visible && !reordering && <GlassTextButton
                   title={editingNoteId === note.id ? "완료" : "편집"}
                   width={TEXT_BUTTON_WIDTH}
                   height={BUTTON_HEIGHT}
@@ -514,6 +524,7 @@ export default function Index() {
                     else resumeEditing(note);
                   }}
                 />}
+                {reorderHandle}
               </View>
               {editingNoteId === note.id && (
                 <NativeTextInput

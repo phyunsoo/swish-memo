@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, type ReactNod
 import { Keyboard, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { Gesture, GestureDetector, type NativeGesture } from "react-native-gesture-handler";
 import Animated, {
-  cancelAnimation, Easing, measure, ReduceMotion, useAnimatedRef,
+  cancelAnimation, Easing, LinearTransition, measure, ReduceMotion, scrollTo, useAnimatedRef, useAnimatedScrollHandler,
   useAnimatedStyle, useAnimatedReaction, useFrameCallback, useSharedValue, withSpring, withTiming,
   type SharedValue,
 } from "react-native-reanimated";
@@ -12,6 +12,8 @@ import { FolderQuickMenu, type QuickMenuState } from "./folder-quick-menu";
 import { menuLayout, menuTargetAt, menuScrollDirection, menuMaxScrollOffset } from "./quick-menu-geometry";
 import type { Folder } from "@/lib/local-store";
 import type { SearchScrollTarget } from "@/lib/note-search";
+import { reorderNoteIds } from "@/lib/note-order";
+import { reorderTargetIndex, reorderDestinationOffset, synchronizeNoteLayouts, type ReorderLayout } from "@/lib/note-reorder-geometry";
 
 import { NOTE_TEXT_SIZE } from "@/lib/note-typography";
 
@@ -21,7 +23,45 @@ const FADE = {
   easing: Easing.bezier(0.23, 1, 0.32, 1),
   reduceMotion: ReduceMotion.System,
 };
+const NOTE_REFLOW = LinearTransition.duration(400)
+  .easing(Easing.bezier(0.23, 1, 0.32, 1))
+  .reduceMotion(ReduceMotion.System);
 type Note = { id: number; text: string; state: "draft" | "saved" | "trash" };
+type ReorderDrag = {
+  active: SharedValue<number>;
+  from: SharedValue<number>;
+  target: SharedValue<number>;
+  deltaY: SharedValue<number>;
+  startY: SharedValue<number>;
+  holding: SharedValue<boolean>;
+  pointerY: SharedValue<number>;
+  startScroll: SharedValue<number>;
+  scrollOffset: SharedValue<number>;
+  viewportTop: SharedValue<number>;
+  viewportHeight: SharedValue<number>;
+  layouts: SharedValue<ReorderLayout[]>;
+  initialOrder: SharedValue<number[]>;
+};
+
+function resetReorderState(reorder: ReorderDrag) {
+  "worklet";
+  cancelAnimation(reorder.deltaY);
+  reorder.holding.set(false);
+  reorder.active.set(-1);
+  reorder.from.set(-1);
+  reorder.target.set(-1);
+  reorder.deltaY.set(0);
+  reorder.initialOrder.set([]);
+}
+
+function updateReorderPosition(reorder: ReorderDrag) {
+  "worklet";
+  const delta = reorder.pointerY.get() - reorder.startY.get()
+    + reorder.scrollOffset.get() - reorder.startScroll.get();
+  reorder.deltaY.set(delta);
+  reorder.target.set(reorderTargetIndex(reorder.layouts.get(), reorder.active.get(), reorder.from.get(), delta));
+}
+
 type DragState = {
   active: SharedValue<number>;
   settling: SharedValue<boolean>;
@@ -191,10 +231,114 @@ function DragPreview({ note, drag, isDark, noteFontSize }: { note: Note; drag: D
   );
 }
 
-export function DraggableNotes<T extends Note>({ notes, folders, renderNote, children, header, paddingTop, paddingBottom, isDark, isTrashView, editing, onDrop, searchTarget, noteFontSize = NOTE_TEXT_SIZE.default }: {
+function ReorderRow({ noteId, index, reordering, reorder, onLayout, children }: {
+  noteId: number;
+  index: number;
+  reordering: boolean;
+  reorder: ReorderDrag;
+  onLayout: (y: number, height: number) => void;
+  children: ReactNode;
+}) {
+  const style = useAnimatedStyle(() => {
+    // React has already moved this row to its final layout after a drop.
+    // Remove the temporary drag offset immediately instead of animating it again.
+    if (!reordering || reorder.active.get() === -1 || reorder.initialOrder.get()[index] !== noteId) {
+      return { zIndex: 0, transform: [{ translateY: 0 }] };
+    }
+    if (reorder.active.get() === noteId) {
+      return { zIndex: 10, transform: [{ translateY: reorder.deltaY.get() }] };
+    }
+    const from = reorder.from.get();
+    const target = reorder.target.get();
+    const draggedHeight = reorder.layouts.get()[from]?.height ?? 0;
+    const offset = from < target && index > from && index <= target ? -draggedHeight
+      : from > target && index >= target && index < from ? draggedHeight : 0;
+    return { zIndex: 0, transform: [{ translateY: withSpring(offset, SPRING) }] };
+  });
+
+  return (
+    <Animated.View layout={reordering ? undefined : NOTE_REFLOW}
+      onLayout={(event) => onLayout(event.nativeEvent.layout.y, event.nativeEvent.layout.height)} style={style}>
+      {children}
+    </Animated.View>
+  );
+}
+
+function ReorderHandle({ noteId, nativeScroll, scrollRef, reorder, onDrop }: {
+  noteId: number;
+  nativeScroll: NativeGesture;
+  scrollRef: ReturnType<typeof useAnimatedRef<ScrollView>>;
+  reorder: ReorderDrag;
+  onDrop: (noteId: number, targetIndex: number) => void;
+}) {
+  const gesture = Gesture.Pan().minDistance(1).maxPointers(1).blocksExternalGesture(nativeScroll)
+    .onBegin((event) => {
+      reorder.startY.set(event.absoluteY);
+      reorder.startScroll.set(reorder.scrollOffset.get());
+    })
+    .onStart((event) => {
+      if (reorder.active.get() !== -1) return;
+      const from = reorder.layouts.get().findIndex((item) => item.id === noteId);
+      if (from < 0) return;
+      const viewport = measure(scrollRef);
+      if (!viewport) return;
+      reorder.viewportTop.set(viewport.pageY);
+      reorder.viewportHeight.set(viewport.height);
+      // Avoid a callback that React Compiler can hoist outside this worklet.
+      const initialOrder: number[] = [];
+      for (const item of reorder.layouts.get()) initialOrder.push(item.id);
+      reorder.initialOrder.set(initialOrder);
+      reorder.from.set(from);
+      reorder.pointerY.set(event.absoluteY);
+      reorder.active.set(noteId);
+      reorder.holding.set(true);
+      updateReorderPosition(reorder);
+    })
+    .onUpdate((event) => {
+      if (reorder.active.get() !== noteId) return;
+      reorder.pointerY.set(event.absoluteY);
+      updateReorderPosition(reorder);
+    })
+    .onEnd((event) => {
+      if (reorder.active.get() !== noteId) return;
+      reorder.pointerY.set(event.absoluteY);
+      updateReorderPosition(reorder);
+      reorder.holding.set(false);
+      const from = reorder.from.get();
+      const layouts = reorder.layouts.get();
+      const delta = reorder.deltaY.get();
+      const target = reorderTargetIndex(layouts, noteId, from, delta);
+      reorder.target.set(target);
+      const destination = reorderDestinationOffset(layouts, from, target);
+      reorder.deltaY.set(withSpring(destination, SPRING, (finished) => {
+        if (!finished || reorder.active.get() !== noteId) return;
+        if (target === from) {
+          resetReorderState(reorder);
+        } else {
+          scheduleOnRN(onDrop, noteId, target);
+        }
+      }));
+      scheduleOnRN(selectionFeedback);
+    })
+    .onFinalize((_event, success) => {
+      if (!success && reorder.active.get() === noteId) {
+        resetReorderState(reorder);
+      }
+    });
+
+  return (
+    <GestureDetector gesture={gesture}>
+      <View collapsable={false} accessible accessibilityRole="button" accessibilityLabel="드래그하여 메모 순서 변경" style={styles.reorderHandle}>
+        <Text style={styles.reorderGlyph}>≡</Text>
+      </View>
+    </GestureDetector>
+  );
+}
+
+export function DraggableNotes<T extends Note>({ notes, folders, renderNote, children, header, paddingTop, paddingBottom, isDark, isTrashView, editing, reordering = false, onDrop, onReorder, searchTarget, noteFontSize = NOTE_TEXT_SIZE.default }: {
   notes: T[];
   folders: Folder[];
-  renderNote: (note: T) => ReactNode;
+  renderNote: (note: T, reorderHandle?: ReactNode) => ReactNode;
   children: ReactNode;
   header?: ReactNode;
   paddingTop: number;
@@ -202,18 +346,56 @@ export function DraggableNotes<T extends Note>({ notes, folders, renderNote, chi
   isDark: boolean;
   isTrashView: boolean;
   editing: boolean;
+  reordering?: boolean;
   onDrop: (noteId: number, targetId: number) => void;
+  onReorder?: (ids: number[]) => void;
   noteFontSize?: number;
   searchTarget?: SearchScrollTarget | null;
 }) {
   const dimensions = useWindowDimensions();
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useAnimatedRef<ScrollView>();
   const rowPositions = useRef(new Map<number, number>());
+  const rowLayouts = useRef(new Map<number, ReorderLayout>());
+  const visibleIds = useMemo(() => notes.map((note) => note.id), [notes]);
+  const reorderActive = useSharedValue(-1);
+  const reorderFrom = useSharedValue(-1);
+  const reorderTarget = useSharedValue(-1);
+  const reorderDeltaY = useSharedValue(0);
+  const reorderStartY = useSharedValue(0);
+  const reorderHolding = useSharedValue(false);
+  const reorderPointerY = useSharedValue(0);
+  const reorderStartScroll = useSharedValue(0);
+  const listScrollOffset = useSharedValue(0);
+  const viewportTop = useSharedValue(0);
+  const viewportHeight = useSharedValue(0);
+  const contentHeight = useSharedValue(0);
+  const reorderLayouts = useSharedValue<ReorderLayout[]>([]);
+  const reorderInitialOrder = useSharedValue<number[]>([]);
+  const reorder = useMemo<ReorderDrag>(() => ({
+    active: reorderActive, from: reorderFrom, target: reorderTarget,
+    deltaY: reorderDeltaY, startY: reorderStartY, layouts: reorderLayouts,
+    holding: reorderHolding, pointerY: reorderPointerY, startScroll: reorderStartScroll,
+    scrollOffset: listScrollOffset, viewportTop, viewportHeight,
+    initialOrder: reorderInitialOrder,
+  }), [reorderActive, reorderFrom, reorderTarget, reorderDeltaY, reorderStartY, reorderLayouts,
+    reorderHolding, reorderPointerY, reorderStartScroll, listScrollOffset, viewportTop, viewportHeight, reorderInitialOrder]);
+  const onScroll = useAnimatedScrollHandler((event) => {
+    listScrollOffset.set(event.contentOffset.y);
+    if (reorder.holding.get()) updateReorderPosition(reorder);
+  });
+  const finishReorder = useCallback((noteId: number, targetIndex: number) => {
+    const ids = reorderNoteIds(visibleIds, noteId, targetIndex);
+    if (onReorder && ids !== visibleIds) onReorder(ids);
+    else resetReorderState(reorder);
+  }, [visibleIds, onReorder, reorder]);
+  const publishLayouts = useCallback(() => {
+    reorder.layouts.set(synchronizeNoteLayouts(rowLayouts.current, visibleIds));
+  }, [visibleIds, reorder]);
   const scrollToSearchTarget = useCallback(() => {
     if (!searchTarget) return;
     const y = rowPositions.current.get(searchTarget.noteId);
     if (y !== undefined) scrollRef.current?.scrollTo({ y: Math.max(0, y + searchTarget.offset - paddingTop - 16), animated: true });
-  }, [searchTarget, paddingTop]);
+  }, [searchTarget, paddingTop, scrollRef]);
   useEffect(() => { scrollToSearchTarget(); }, [scrollToSearchTarget]);
   const rootRef = useAnimatedRef<View>();
   const nativeScroll = useMemo(() => Gesture.Native(), []);
@@ -249,6 +431,29 @@ export function DraggableNotes<T extends Note>({ notes, folders, renderNote, chi
     resetDragState(drag);
   }, [notes, folders, dimensions.width, dimensions.height, paddingTop, paddingBottom, drag]);
 
+  useLayoutEffect(() => {
+    resetReorderState(reorder);
+    publishLayouts();
+    const visible = new Set(visibleIds);
+    for (const id of rowPositions.current.keys()) {
+      if (!visible.has(id)) rowPositions.current.delete(id);
+    }
+  }, [visibleIds, reordering, reorder, publishLayouts]);
+
+  useFrameCallback((frame) => {
+    if (!reorder.holding.get()) return;
+    const height = viewportHeight.get();
+    if (height <= 0) return;
+    const localY = reorder.pointerY.get() - viewportTop.get();
+    const edge = Math.min(80, height / 4);
+    const speed = localY < edge ? -Math.min(1, (edge - localY) / edge)
+      : localY > height - edge ? Math.min(1, (localY - height + edge) / edge) : 0;
+    if (speed === 0) return;
+    const offset = Math.max(0, Math.min(Math.max(0, contentHeight.get() - height),
+      listScrollOffset.get() + speed * 260 * Math.min(frame.timeSincePreviousFrame ?? 16, 32) / 1000));
+    if (offset !== listScrollOffset.get()) scrollTo(scrollRef, 0, offset, false);
+  });
+
   // The UI thread keeps scrolling even when the finger stays still at an edge.
   useFrameCallback((frame) => {
     if (active.get() === -1 || settling.get() || scrollDirection.get() === 0) return;
@@ -274,22 +479,33 @@ export function DraggableNotes<T extends Note>({ notes, folders, renderNote, chi
         <Animated.ScrollView ref={scrollRef} style={styles.container}
           contentInsetAdjustmentBehavior="never" keyboardShouldPersistTaps="handled"
           automaticallyAdjustKeyboardInsets
-          onContentSizeChange={scrollToSearchTarget}
+          onScroll={onScroll} scrollEventThrottle={16}
+          onLayout={(event) => viewportHeight.set(event.nativeEvent.layout.height)}
+          onContentSizeChange={(_width, height) => {
+            contentHeight.set(height);
+            scrollToSearchTarget();
+          }}
           removeClippedSubviews={false}
           contentContainerStyle={{ flexGrow: 1, paddingTop, paddingBottom }}>
           {header}
-          {notes.map((note) => (
-            <View key={note.id} onLayout={(event) => {
-              rowPositions.current.set(note.id, event.nativeEvent.layout.y);
-              if (searchTarget?.noteId === note.id) scrollToSearchTarget();
-            }}>
-            <DraggableRow note={note} drag={drag} nativeScroll={nativeScroll}
+          {notes.map((note, index) => (
+            <ReorderRow key={note.id} noteId={note.id} index={index} reordering={reordering} reorder={reorder}
+              onLayout={(y, height) => {
+                rowPositions.current.set(note.id, y);
+                rowLayouts.current.set(note.id, { id: note.id, y, height });
+                publishLayouts();
+                if (searchTarget?.noteId === note.id) scrollToSearchTarget();
+              }}>
+            {reordering ? renderNote(note, <ReorderHandle noteId={note.id} nativeScroll={nativeScroll}
+              scrollRef={scrollRef} reorder={reorder} onDrop={finishReorder} />) : <DraggableRow note={note} drag={drag} nativeScroll={nativeScroll}
               rootRef={rootRef} paddingTop={paddingTop} paddingBottom={paddingBottom} folderCount={folders.length} disabled={editing} onDrop={onDrop}>
               {renderNote(note)}
-            </DraggableRow>
-            </View>
+            </DraggableRow>}
+            </ReorderRow>
           ))}
-          {children}
+          <Animated.View layout={reordering ? undefined : NOTE_REFLOW}>
+            {children}
+          </Animated.View>
         </Animated.ScrollView>
       </GestureDetector>
       <FolderQuickMenu menu={menu} isDark={isDark} folders={folders} isTrashView={isTrashView} />
@@ -305,4 +521,6 @@ const styles = StyleSheet.create({
     shadowColor: "#000000", shadowOpacity: 0.18, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: 12 },
   previewText: { fontSize: 16, lineHeight: 23, flexShrink: 1 },
   ellipsis: { fontSize: 22, lineHeight: 24, marginTop: "auto" },
+  reorderHandle: { width: 120, height: 120, margin: -30, alignItems: "center", justifyContent: "center" },
+  reorderGlyph: { fontSize: 24, lineHeight: 28, color: "#8E8E93" },
 });

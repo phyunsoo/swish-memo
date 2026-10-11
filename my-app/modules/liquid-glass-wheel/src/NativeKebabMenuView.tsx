@@ -12,6 +12,7 @@ type NativeKebabMenuProps = ViewProps & {
   onRenameFolder?: (event: { nativeEvent: { name: string } }) => void;
   onDeleteFolder?: () => void;
   onSearch: () => void;
+  onReorder: () => void;
   onSettings: () => void;
 };
 

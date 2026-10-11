@@ -4,6 +4,7 @@ import { GlassButton } from "./glass-button";
 export type FolderKebabMenuProps = {
   onSearch: () => void;
   onSettings: () => void;
+  onReorder: () => void;
   onEmptyTrash: () => void;
   showEmptyTrash: boolean;
   onRenameFolder: (name: string) => void;
@@ -14,7 +15,7 @@ export type FolderKebabMenuProps = {
   isDark: boolean;
 };
 
-export function FolderKebabMenu({ onSearch, onSettings, onEmptyTrash, showEmptyTrash, onRequestRenameFolder, onDeleteFolder, showFolderActions, isDark }: FolderKebabMenuProps) {
+export function FolderKebabMenu({ onSearch, onSettings, onReorder, onEmptyTrash, showEmptyTrash, onRequestRenameFolder, onDeleteFolder, showFolderActions, isDark }: FolderKebabMenuProps) {
   return (
     <GlassButton
       label="더 보기"
@@ -24,6 +25,7 @@ export function FolderKebabMenu({ onSearch, onSettings, onEmptyTrash, showEmptyT
       onPress={() => Alert.alert("더 보기", undefined, [
         { text: "설정", onPress: onSettings },
         { text: "검색", onPress: onSearch },
+        { text: "메모 순서 바꾸기", onPress: onReorder },
         ...(showEmptyTrash ? [{ text: "휴지통 비우기", style: "destructive" as const, onPress: onEmptyTrash }] : []),
         ...(showFolderActions ? [{ text: "폴더 이름 변경", onPress: onRequestRenameFolder }, { text: "폴더 삭제", style: "destructive" as const, onPress: onDeleteFolder }] : []),
         { text: "닫기", style: "cancel" },

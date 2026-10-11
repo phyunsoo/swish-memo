@@ -14,7 +14,7 @@ public class LiquidGlassWheelModule: Module {
     }
 
     View(NativeKebabMenuView.self) {
-      Events("onSearch", "onDelete", "onSettings", "onEmptyTrash", "onRenameFolder", "onDeleteFolder")
+      Events("onSearch", "onReorder", "onDelete", "onSettings", "onEmptyTrash", "onRenameFolder", "onDeleteFolder")
 
       Prop("isDark") { (view: NativeKebabMenuView, isDark: Bool) in
         view.setDarkAppearance(isDark)
