@@ -42,7 +42,7 @@ function SettingsActionRow({ title, value, onPress }: { title: string; value: st
   );
 }
 
-export default function SettingsScreen({ mode, onModeChange, noteFontSize, onNoteFontSizeChange, notePlaceholder, onNotePlaceholderChange, markdownEnabled, onMarkdownEnabledChange, onClose }: SettingsScreenProps) {
+export default function SettingsScreen({ mode, onModeChange, noteFontSize, onNoteFontSizeChange, notePlaceholder, onNotePlaceholderChange, markdownEnabled, onMarkdownEnabledChange, hyperlinksEnabled, onHyperlinksEnabledChange, onClose }: SettingsScreenProps) {
   const { isDark } = useAppearance();
   const [activeSheet, setActiveSheet] = useState<SettingsSheet | null>(null);
   const backgroundColor = isDark ? "#000000" : "#F2F2F7";
@@ -83,9 +83,15 @@ export default function SettingsScreen({ mode, onModeChange, noteFontSize, onNot
                 onPress={() => setActiveSheet("textSize")}
               />
               <Switch
-                label="마크다운 문법"
+                label="마크다운"
                 value={markdownEnabled}
                 onValueChange={onMarkdownEnabledChange}
+                modifiers={rowModifiers}
+              />
+              <Switch
+                label="하이퍼링크"
+                value={hyperlinksEnabled}
+                onValueChange={onHyperlinksEnabledChange}
                 modifiers={rowModifiers}
               />
             </Section>

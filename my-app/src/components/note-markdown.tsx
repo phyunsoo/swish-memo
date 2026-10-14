@@ -9,7 +9,8 @@ import { getNoteColors } from "@/theme/note-colors";
 import { getNoteTextStyle } from "@/lib/note-typography";
 
 // Keep memo line breaks and punctuation as written. HTML stays disabled.
-const parser = createMarkdownIt({ typographer: false }).set({ breaks: true });
+const ADDRESS_PATTERN = /(?:https?:\/\/|www\.)[^\s<>"']+|(?:[A-Z0-9](?:[A-Z0-9-]*[A-Z0-9])?\.)+[A-Z]{2,}(?::\d{1,5})?(?:[/?#][^\s<>"']*)?/gi;
+const TRAILING_ADDRESS_PUNCTUATION = /[.,!?;:)}\]]$/;
 
 function SelectableText(props: TextProps) {
   return <Text {...props} selectable />;
@@ -25,13 +26,14 @@ const rules: RenderRules = {
 };
 
 function openLink(url: string) {
-  if (/^(https?:|mailto:|tel:)/i.test(url)) {
-    void Linking.openURL(url).catch(() => undefined);
+  const normalizedUrl = /^(https?:|mailto:|tel:)/i.test(url) ? url : `https://${url}`;
+  if (/^(https?:|mailto:|tel:)/i.test(normalizedUrl)) {
+    void Linking.openURL(normalizedUrl).catch(() => undefined);
   }
   return false;
 }
 
-export const NoteMarkdown = memo(function NoteMarkdown({
+export const AutoLinkedText = memo(function AutoLinkedText({
   text,
   fontSize,
   isDark = false,
@@ -40,6 +42,57 @@ export const NoteMarkdown = memo(function NoteMarkdown({
   fontSize: number;
   isDark?: boolean;
 }) {
+  const colors = getNoteColors(isDark);
+  const segments: Array<{ text: string; url?: string }> = [];
+  let cursor = 0;
+  for (const match of text.matchAll(ADDRESS_PATTERN)) {
+    const rawUrl = match[0];
+    const start = match.index ?? 0;
+    if (text[start - 1] && /[\w@.]/.test(text[start - 1])) continue;
+    let url = rawUrl;
+    while (TRAILING_ADDRESS_PUNCTUATION.test(url)) url = url.slice(0, -1);
+    if (!url) continue;
+    if (start > cursor) segments.push({ text: text.slice(cursor, start) });
+    segments.push({ text: url, url });
+    cursor = start + url.length;
+    if (url.length < rawUrl.length) {
+      segments.push({ text: rawUrl.slice(url.length) });
+      cursor = start + rawUrl.length;
+    }
+  }
+  if (cursor < text.length || segments.length === 0) segments.push({ text: text.slice(cursor) });
+
+  return (
+    <Text selectable style={[getNoteTextStyle(fontSize), { color: colors.text }]}>
+      {segments.map((segment, index) => segment.url ? (
+        <Text
+          key={`${index}-${segment.text}`}
+          accessibilityRole="link"
+          onPress={() => openLink(segment.url!)}
+          style={{ color: colors.link, textDecorationLine: "underline" }}
+        >
+          {segment.text}
+        </Text>
+      ) : <Text key={`${index}-${segment.text}`}>{segment.text}</Text>)}
+    </Text>
+  );
+});
+
+export const NoteMarkdown = memo(function NoteMarkdown({
+  text,
+  fontSize,
+  isDark = false,
+  hyperlinksEnabled = false,
+}: {
+  text: string;
+  fontSize: number;
+  isDark?: boolean;
+  hyperlinksEnabled?: boolean;
+}) {
+  const parser = useMemo(
+    () => createMarkdownIt({ typographer: false }).set({ breaks: true, linkify: hyperlinksEnabled }),
+    [hyperlinksEnabled],
+  );
   const styles = useMemo<MarkdownStyleMap>(() => {
     const typography = getNoteTextStyle(fontSize);
     const colors = getNoteColors(isDark);

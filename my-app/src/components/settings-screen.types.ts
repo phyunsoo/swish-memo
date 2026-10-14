@@ -9,5 +9,7 @@ export type SettingsScreenProps = {
   onNotePlaceholderChange: (value: string) => void;
   markdownEnabled: boolean;
   onMarkdownEnabledChange: (value: boolean) => void;
+  hyperlinksEnabled: boolean;
+  onHyperlinksEnabledChange: (value: boolean) => void;
   onClose: () => void;
 };

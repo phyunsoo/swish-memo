@@ -39,6 +39,7 @@ export type AppSnapshot = {
   noteFontSize: number;
   notePlaceholder: string;
   markdownEnabled: boolean;
+  hyperlinksEnabled: boolean;
 };
 
 export const INITIAL_SNAPSHOT: AppSnapshot = {
@@ -50,6 +51,7 @@ export const INITIAL_SNAPSHOT: AppSnapshot = {
   noteFontSize: NOTE_TEXT_SIZE.default,
   notePlaceholder: DEFAULT_NOTE_PLACEHOLDER,
   markdownEnabled: false,
+  hyperlinksEnabled: false,
 };
 
 async function loadLegacySnapshot(): Promise<AppSnapshot> {
@@ -73,6 +75,7 @@ async function loadLegacySnapshot(): Promise<AppSnapshot> {
       draftText: typeof parsed.draftText === "string" ? parsed.draftText : "",
       noteFontSize: normalizeNoteFontSize(parsed.noteFontSize),
       markdownEnabled: parsed.markdownEnabled === true,
+      hyperlinksEnabled: parsed.hyperlinksEnabled === true,
       notePlaceholder: typeof parsed.notePlaceholder === "string"
         ? parsed.notePlaceholder
         : DEFAULT_NOTE_PLACEHOLDER,

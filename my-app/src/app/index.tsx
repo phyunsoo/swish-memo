@@ -1,5 +1,5 @@
 import { NoteCard } from "@/components/note-card";
-import { GlassTextButton, TEXT_BUTTON_WIDTH } from "@/components/glass-text-button";
+import { NativeCheckButton } from "@/components/native-check-button";
 import { useNoteActions } from "@/hooks/use-note-actions";
 import { useCallback, useMemo, useRef, useState } from "react";
 import {
@@ -42,7 +42,7 @@ export default function Index() {
   const { isDark } = useAppearance();
   const inputRef = useRef<InstanceType<typeof NativeTextInput>>(null);
   const editInputRef = useRef<InstanceType<typeof NativeTextInput>>(null);
-  const { notes, setNotes, folders, setFolders, noteText, setNoteText, noteFontSize, notePlaceholder, markdownEnabled, allocateNoteId, storageStatus } = useMemoStorage();
+  const { notes, setNotes, folders, setFolders, noteText, setNoteText, noteFontSize, notePlaceholder, markdownEnabled, hyperlinksEnabled, allocateNoteId, storageStatus } = useMemoStorage();
   const { completeTodo, reorderNotes } = useNoteActions();
   const noteTextStyle = getNoteTextStyle(noteFontSize);
   const [noteTimestamp, setNoteTimestamp] = useState<number | undefined>();
@@ -326,14 +326,10 @@ export default function Index() {
             )}
             <View pointerEvents="box-none" style={styles.toolbarActions}>
               {hasContent && (
-                <GlassTextButton
-                  title="완료"
-                  glassTint={isDark ? "#343438" : "#F2F2F5"}
-                  onPress={createNote}
-                />
+                <NativeCheckButton onPress={createNote} />
               )}
               {reordering ? (
-                <GlassTextButton title="완료" width={TEXT_BUTTON_WIDTH} glassTint={isDark ? "#343438" : "#F2F2F5"} onPress={() => setReordering(false)} />
+                <NativeCheckButton onPress={() => setReordering(false)} />
               ) : activeView === "home" ? (
                 <HomeKebabMenu onSearch={openSearch} isDark={isDark} onReorder={() => setReordering(true)} onDelete={confirmMoveAllDraftsToTrash} onSettings={() => { Keyboard.dismiss(); router.push("/settings"); }} />
               ) : (
@@ -386,6 +382,7 @@ export default function Index() {
               editInputRef={editInputRef}
               noteFontSize={noteFontSize}
               markdownEnabled={markdownEnabled}
+              hyperlinksEnabled={hyperlinksEnabled}
               search={search}
               onComplete={() => {
                 completeTodo(note.id);

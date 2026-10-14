@@ -14,6 +14,7 @@ function useMemoStorageState() {
   const [noteFontSize, setNoteFontSize] = useState<number>(NOTE_TEXT_SIZE.default);
   const [notePlaceholder, setNotePlaceholder] = useState(INITIAL_SNAPSHOT.notePlaceholder);
   const [markdownEnabled, setMarkdownEnabled] = useState(INITIAL_SNAPSHOT.markdownEnabled);
+  const [hyperlinksEnabled, setHyperlinksEnabled] = useState(INITIAL_SNAPSHOT.hyperlinksEnabled);
   const [storageStatus, setStorageStatus] = useState<StorageStatus>("loading");
   const storageReady = storageStatus === "ready";
   const [persistence] = useState(() => createMemoPersistence<AppSnapshot>({
@@ -34,6 +35,7 @@ function useMemoStorageState() {
       setNoteFontSize(snapshot.noteFontSize);
       setNotePlaceholder(snapshot.notePlaceholder);
       setMarkdownEnabled(snapshot.markdownEnabled);
+      setHyperlinksEnabled(snapshot.hyperlinksEnabled);
       nextNoteId.current = Math.max(0, ...snapshot.notes.map((note) => note.id + 1));
       setStorageStatus("ready");
     }).catch((error) => {
@@ -47,9 +49,9 @@ function useMemoStorageState() {
 
   useEffect(() => {
     if (!storageReady) return;
-    const snapshot: AppSnapshot = { folders, notes, draftText: noteText, noteFontSize, notePlaceholder, markdownEnabled };
+    const snapshot: AppSnapshot = { folders, notes, draftText: noteText, noteFontSize, notePlaceholder, markdownEnabled, hyperlinksEnabled };
     void persistence.save(snapshot);
-  }, [folders, notes, noteText, noteFontSize, notePlaceholder, markdownEnabled, storageReady, persistence]);
+  }, [folders, notes, noteText, noteFontSize, notePlaceholder, markdownEnabled, hyperlinksEnabled, storageReady, persistence]);
 
   useEffect(() => {
     if (!storageReady) return;
@@ -65,7 +67,7 @@ function useMemoStorageState() {
     return nextNoteId.current;
   };
 
-  return { notes, setNotes, folders, setFolders, noteText, setNoteText, noteFontSize, setNoteFontSize, notePlaceholder, setNotePlaceholder, markdownEnabled, setMarkdownEnabled, allocateNoteId, storageStatus };
+  return { notes, setNotes, folders, setFolders, noteText, setNoteText, noteFontSize, setNoteFontSize, notePlaceholder, setNotePlaceholder, markdownEnabled, setMarkdownEnabled, hyperlinksEnabled, setHyperlinksEnabled, allocateNoteId, storageStatus };
 }
 
 const MemoStorageContext = createContext<ReturnType<typeof useMemoStorageState> | null>(null);

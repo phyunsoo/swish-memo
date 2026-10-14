@@ -5,7 +5,7 @@ import type { useNoteSearch } from "@/hooks/use-note-search";
 import { EMPTY_TEXT_MATCHES } from "@/lib/note-search";
 import { getNoteTextStyle, NOTE_TEXT_SIZE, NOTE_LINE_HEIGHT } from "@/lib/note-typography";
 import { SearchNoteText } from "./note-search";
-import { NoteMarkdown } from "./note-markdown";
+import { AutoLinkedText, NoteMarkdown } from "./note-markdown";
 import { GlassButton, GLASS_BUTTON_SIZE } from "./glass-button";
 import { GlassTextButton, TEXT_BUTTON_WIDTH } from "./glass-text-button";
 
@@ -34,6 +34,7 @@ type Props = {
   editInputRef: Ref<NativeTextInput>;
   noteFontSize: number;
   markdownEnabled: boolean;
+  hyperlinksEnabled: boolean;
   search: Pick<ReturnType<typeof useNoteSearch>, "visible" | "matchesByNote" | "selectedMatch" | "reportOffset">;
   onComplete: () => void;
   onEdit: () => void;
@@ -41,7 +42,7 @@ type Props = {
 };
 
 export function NoteCard({ note, reorderHandle, isDark, editing, reordering, editingText,
-  editInputRef, noteFontSize, markdownEnabled, search, onComplete, onEdit, onChangeText }: Props) {
+  editInputRef, noteFontSize, markdownEnabled, hyperlinksEnabled, search, onComplete, onEdit, onChangeText }: Props) {
   const noteTextStyle = getNoteTextStyle(noteFontSize);
   const colors = getNoteColors(isDark);
   return (
@@ -110,7 +111,9 @@ export function NoteCard({ note, reorderHandle, isDark, editing, reordering, edi
         />
       ) : !editing ? (
         markdownEnabled ? (
-          <NoteMarkdown text={note.text} fontSize={noteFontSize} isDark={isDark} />
+          <NoteMarkdown text={note.text} fontSize={noteFontSize} isDark={isDark} hyperlinksEnabled={hyperlinksEnabled} />
+        ) : hyperlinksEnabled ? (
+          <AutoLinkedText text={note.text} fontSize={noteFontSize} isDark={isDark} />
         ) : (
           <NativeText selectable style={[styles.editorInput, noteTextStyle, { color: colors.text }]}>
             {note.text}

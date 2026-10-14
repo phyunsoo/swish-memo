@@ -4,7 +4,7 @@ import { Host, Switch } from "@expo/ui";
 import { NOTE_TEXT_SIZE } from "@/lib/note-typography";
 import type { SettingsScreenProps } from "./settings-screen.types";
 
-export default function SettingsScreen({ mode, onModeChange, noteFontSize, onNoteFontSizeChange, notePlaceholder, onNotePlaceholderChange, markdownEnabled, onMarkdownEnabledChange }: SettingsScreenProps) {
+export default function SettingsScreen({ mode, onModeChange, noteFontSize, onNoteFontSizeChange, notePlaceholder, onNotePlaceholderChange, markdownEnabled, onMarkdownEnabledChange, hyperlinksEnabled, onHyperlinksEnabledChange }: SettingsScreenProps) {
   const [placeholderVisible, setPlaceholderVisible] = useState(false);
   const [draftPlaceholder, setDraftPlaceholder] = useState(notePlaceholder);
   return <><ScrollView contentContainerStyle={{ padding: 20, gap: 24 }}>
@@ -21,7 +21,8 @@ export default function SettingsScreen({ mode, onModeChange, noteFontSize, onNot
       <Text onPress={() => onNoteFontSizeChange(Math.min(NOTE_TEXT_SIZE.max, noteFontSize + NOTE_TEXT_SIZE.step))}>텍스트 크기 키우기 ＋</Text>
     </View>
     <Host matchContents style={{ width: "100%" }}>
-      <Switch label="마크다운 문법" value={markdownEnabled} onValueChange={onMarkdownEnabledChange} />
+      <Switch label="마크다운" value={markdownEnabled} onValueChange={onMarkdownEnabledChange} />
+      <Switch label="하이퍼링크" value={hyperlinksEnabled} onValueChange={onHyperlinksEnabledChange} />
     </Host>
     <Text style={{ fontSize: 21, fontWeight: "600" }}>정보</Text>
     <Text>iCloud　준비 중</Text>

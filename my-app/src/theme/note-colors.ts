@@ -11,7 +11,7 @@ export const NOTE_COLORS = {
     inset: "#EFEFF2",
     codeBorder: "#D8D8DC",
     quoteBorder: "#C7C7CC",
-    link: "#956200",
+    link: "#007AFF",
   },
   dark: {
     text: "#F5F5F2",
@@ -24,7 +24,7 @@ export const NOTE_COLORS = {
     inset: "#343438",
     codeBorder: "#4A4A4D",
     quoteBorder: "#4A4A4D",
-    link: "#E7A000",
+    link: "#0A84FF",
   },
 } as const;
 
