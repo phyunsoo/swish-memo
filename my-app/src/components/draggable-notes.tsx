@@ -8,6 +8,8 @@ import Animated, {
 } from "react-native-reanimated";
 import { scheduleOnRN } from "react-native-worklets";
 import * as Haptics from "expo-haptics";
+import { Image } from "expo-image";
+import { notePhotoUri, type NotePhoto } from "@/lib/note-photos";
 import { FolderQuickMenu, type QuickMenuState } from "./folder-quick-menu";
 import { menuLayout, menuTargetAt, menuScrollDirection, menuMaxScrollOffset } from "./quick-menu-geometry";
 import type { Folder } from "@/lib/local-store";
@@ -26,7 +28,7 @@ const FADE = {
 const NOTE_REFLOW = LinearTransition.duration(400)
   .easing(Easing.bezier(0.23, 1, 0.32, 1))
   .reduceMotion(ReduceMotion.System);
-type Note = { id: number; text: string; state: "draft" | "saved" | "trash" };
+type Note = { id: number; text: string; photos?: NotePhoto[]; state: "draft" | "saved" | "trash" };
 type ReorderDrag = {
   active: SharedValue<number>;
   from: SharedValue<number>;
@@ -223,9 +225,12 @@ function DragPreview({ note, drag, isDark, noteFontSize }: { note: Note; drag: D
   return (
     <Animated.View pointerEvents="none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants"
       style={[styles.preview, { backgroundColor: isDark ? "#242423" : "#FFFFFF", borderColor: isDark ? "#4A4A4D" : "#CED1D6" }, style]}>
-      <Text numberOfLines={2} style={[styles.previewText, { color: isDark ? "#F5F5F2" : "#171717", fontSize: noteFontSize * 16 / NOTE_TEXT_SIZE.default, lineHeight: noteFontSize * 23 / NOTE_TEXT_SIZE.default }]}>
-        {note.text.trim().slice(0, 100)}
-      </Text>
+      <View style={styles.previewContent}>
+        {note.photos?.[0] && <Image source={notePhotoUri(note.photos[0])} contentFit="cover" style={styles.previewPhoto} />}
+        <Text numberOfLines={2} style={[styles.previewText, { color: isDark ? "#F5F5F2" : "#171717", fontSize: noteFontSize * 16 / NOTE_TEXT_SIZE.default, lineHeight: noteFontSize * 23 / NOTE_TEXT_SIZE.default }]}>
+          {note.text.trim().slice(0, 100) || `사진 ${note.photos?.length ?? 0}장`}
+        </Text>
+      </View>
       <Text style={[styles.ellipsis, { color: isDark ? "#A1A1A6" : "#77777C" }]}>…</Text>
     </Animated.View>
   );
@@ -335,7 +340,7 @@ function ReorderHandle({ noteId, nativeScroll, scrollRef, reorder, onDrop }: {
   );
 }
 
-export function DraggableNotes<T extends Note>({ notes, folders, renderNote, children, header, paddingTop, paddingBottom, isDark, isTrashView, editing, reordering = false, onDrop, onReorder, searchTarget, noteFontSize = NOTE_TEXT_SIZE.default }: {
+export function DraggableNotes<T extends Note>({ notes, folders, renderNote, children, header, paddingTop, paddingBottom, isDark, isTrashView, editing, reordering = false, onDrop, onReorder, searchTarget, noteFontSize = NOTE_TEXT_SIZE.default, keyboardInset = 0 }: {
   notes: T[];
   folders: Folder[];
   renderNote: (note: T, reorderHandle?: ReactNode) => ReactNode;
@@ -350,6 +355,7 @@ export function DraggableNotes<T extends Note>({ notes, folders, renderNote, chi
   onDrop: (noteId: number, targetId: number) => void;
   onReorder?: (ids: number[]) => void;
   noteFontSize?: number;
+  keyboardInset?: number;
   searchTarget?: SearchScrollTarget | null;
 }) {
   const dimensions = useWindowDimensions();
@@ -474,11 +480,11 @@ export function DraggableNotes<T extends Note>({ notes, folders, renderNote, chi
   );
 
   return (
-    <Animated.View ref={rootRef} collapsable={false} style={styles.container}>
+    <Animated.View ref={rootRef} collapsable={false} style={[styles.container, { marginBottom: keyboardInset }]}>
       <GestureDetector gesture={nativeScroll}>
         <Animated.ScrollView ref={scrollRef} style={styles.container}
           contentInsetAdjustmentBehavior="never" keyboardShouldPersistTaps="handled"
-          automaticallyAdjustKeyboardInsets
+          automaticallyAdjustKeyboardInsets={false}
           onScroll={onScroll} scrollEventThrottle={16}
           onLayout={(event) => viewportHeight.set(event.nativeEvent.layout.height)}
           onContentSizeChange={(_width, height) => {
@@ -520,6 +526,8 @@ const styles = StyleSheet.create({
     borderRadius: 18, borderWidth: StyleSheet.hairlineWidth, padding: 16, zIndex: 10,
     shadowColor: "#000000", shadowOpacity: 0.18, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: 12 },
   previewText: { fontSize: 16, lineHeight: 23, flexShrink: 1 },
+  previewContent: { flexDirection: "row", alignItems: "center", gap: 10 },
+  previewPhoto: { width: 48, height: 48, borderRadius: 8 },
   ellipsis: { fontSize: 22, lineHeight: 24, marginTop: "auto" },
   reorderHandle: { width: 120, height: 120, margin: -30, alignItems: "center", justifyContent: "center" },
   reorderGlyph: { fontSize: 24, lineHeight: 28, color: "#8E8E93" },

@@ -1,23 +1,22 @@
 import ExpoModulesCore
 import UIKit
 
+struct KebabMenuActionRecord: Record {
+  @Field var id: String = ""
+  @Field var title: String = ""
+  @Field var systemImage: String = ""
+  @Field var destructive: Bool = false
+  @Field var disabled: Bool = false
+}
+
 /// UIKit owns the glass, its shadow, and the menu transition. No extra shadow layer is used.
 final class NativeKebabMenuView: ExpoView {
-  let onSearch = EventDispatcher()
-  let onReorder = EventDispatcher()
-  let onDelete = EventDispatcher()
-  let onSettings = EventDispatcher()
-  let onEmptyTrash = EventDispatcher()
-  let onRenameFolder = EventDispatcher()
-  let onDeleteFolder = EventDispatcher()
-
+  let onAction = EventDispatcher()
   private var menuButton: RestoringGlassMenuButton!
   private var isMenuPresented = false
   private var isDark = false
-  private var showsDeleteAction = true
-  private var showsEmptyTrashAction = false
-  private var showsFolderActions = false
-  private var folderName = ""
+  private var actions: [KebabMenuActionRecord] = []
+  private var pendingActionID: String?
 
   required init(appContext: AppContext? = nil) {
     super.init(appContext: appContext)
@@ -43,70 +42,25 @@ final class NativeKebabMenuView: ExpoView {
     menuButton.setNeedsUpdateConfiguration()
   }
 
-  func setShowsDeleteAction(_ value: Bool) {
-    showsDeleteAction = value
-    menuButton.menu = makeMenu()
-  }
-
-  func setShowsEmptyTrashAction(_ value: Bool) {
-    showsEmptyTrashAction = value
-    menuButton.menu = makeMenu()
-  }
-
-  func setShowsFolderActions(_ value: Bool) {
-    showsFolderActions = value
-    menuButton.menu = makeMenu()
-  }
-
-  func setFolderName(_ value: String) {
-    folderName = value
+  func setActions(_ value: [KebabMenuActionRecord]) {
+    actions = value
+    if !isMenuPresented { menuButton.menu = makeMenu() }
   }
 
   private func makeMenu() -> UIMenu {
-    var actions = [
-      UIAction(title: "설정", image: UIImage(systemName: "gearshape")) { [weak self] _ in self?.onSettings() },
-      UIAction(title: "검색", image: UIImage(systemName: "magnifyingglass")) { [weak self] _ in self?.onSearch() },
-      UIAction(title: "메모 순서 바꾸기", image: UIImage(systemName: "arrow.up.arrow.down")) { [weak self] _ in self?.onReorder() }
-    ]
-    if showsDeleteAction {
-      actions.append(UIAction(title: "모두 삭제", image: UIImage(systemName: "trash"), attributes: .destructive) { [weak self] _ in
-        self?.onDelete()
-      })
-    }
-    if showsEmptyTrashAction {
-      actions.append(UIAction(title: "휴지통 비우기", image: UIImage(systemName: "trash"), attributes: .destructive) { [weak self] _ in
-        self?.onEmptyTrash()
-      })
-    }
-    if showsFolderActions {
-      actions.append(UIAction(title: "폴더 이름 변경", image: UIImage(systemName: "pencil")) { [weak self] _ in
-        self?.presentFolderNameAlert()
-      })
-      actions.append(UIAction(title: "폴더 삭제", image: UIImage(systemName: "trash"), attributes: .destructive) { [weak self] _ in
-        self?.onDeleteFolder()
-      })
-    }
-    return UIMenu(children: actions)
-  }
-
-  private func presentFolderNameAlert() {
-    guard let window = window, var presenter = window.rootViewController else { return }
-    while let presented = presenter.presentedViewController {
-      presenter = presented
-    }
-
-    let alert = UIAlertController(title: "폴더 이름 변경", message: "폴더 이름을 입력하세요.", preferredStyle: .alert)
-    alert.addTextField { [weak self] field in
-      field.text = self?.folderName
-
-      field.clearButtonMode = .whileEditing
-    }
-    alert.addAction(UIAlertAction(title: "취소", style: .cancel))
-    alert.addAction(UIAlertAction(title: "확인", style: .default) { [weak self, weak alert] _ in
-      guard let name = alert?.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else { return }
-      self?.onRenameFolder(["name": name])
+    UIMenu(children: actions.map { action in
+      var attributes: UIMenuElement.Attributes = []
+      if action.destructive { attributes.insert(.destructive) }
+      if action.disabled { attributes.insert(.disabled) }
+      return UIAction(title: action.title, image: UIImage(systemName: action.systemImage), attributes: attributes) { [weak self] _ in
+        guard let self else { return }
+        if self.isMenuPresented {
+          self.pendingActionID = action.id
+        } else {
+          self.onAction(["id": action.id])
+        }
+      }
     })
-    presenter.present(alert, animated: true)
   }
 
   private func installButton() {
@@ -137,6 +91,11 @@ final class NativeKebabMenuView: ExpoView {
       // Recreate the native glass after UIKit finishes removing the menu's preview.
       // Reassigning the old button's shadow/configuration can retain the broken glass state.
       self.installButton()
+      if let id = self.pendingActionID {
+        self.pendingActionID = nil
+        // Present the photo picker or alert only after the context menu has finished closing.
+        DispatchQueue.main.async { [weak self] in self?.onAction(["id": id]) }
+      }
     }
 
     let oldButton = menuButton

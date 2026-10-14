@@ -1,6 +1,12 @@
 import { NoteCard } from "@/components/note-card";
+import { NotePhotos } from "@/components/note-photos";
+import { EditorKeyboardToolbar, EDITOR_KEYBOARD_TOOLBAR_INSET } from "@/components/editor-keyboard-toolbar";
+import type { NotePhoto } from "@/lib/note-photos";
+import { hasNoteContent } from "@/lib/note-draft";
+import { resolvePhotoAttachmentTarget, usePhotoAttachment } from "@/hooks/use-photo-attachment";
 import { NativeCheckButton } from "@/components/native-check-button";
 import { useNoteActions } from "@/hooks/use-note-actions";
+import { useKeyboardHeight } from "@/hooks/use-keyboard-height";
 import { useCallback, useMemo, useRef, useState } from "react";
 import {
   Alert,
@@ -37,21 +43,23 @@ type Note = StoredNote;
 
 export default function Index() {
   const insets = useSafeAreaInsets();
+  const keyboardHeight = useKeyboardHeight();
   const router = useRouter();
   const { view } = useLocalSearchParams<{ view?: string }>();
   const { isDark } = useAppearance();
   const inputRef = useRef<InstanceType<typeof NativeTextInput>>(null);
   const editInputRef = useRef<InstanceType<typeof NativeTextInput>>(null);
-  const { notes, setNotes, folders, setFolders, noteText, setNoteText, noteFontSize, notePlaceholder, markdownEnabled, hyperlinksEnabled, allocateNoteId, storageStatus } = useMemoStorage();
+  const { notes, setNotes, folders, setFolders, draft, changeDraftText, appendDraftPhotos, removeDraftPhoto, clearDraft, noteFontSize, notePlaceholder, markdownEnabled, hyperlinksEnabled, allocateNoteId, storageStatus } = useMemoStorage();
   const { completeTodo, reorderNotes } = useNoteActions();
   const noteTextStyle = getNoteTextStyle(noteFontSize);
-  const [noteTimestamp, setNoteTimestamp] = useState<number | undefined>();
+  const { text: noteText, photos: notePhotos, timestamp: noteTimestamp } = draft;
   const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
   const [editingText, setEditingText] = useState("");
   const [editingTimestamp, setEditingTimestamp] = useState<number>(0);
   const [focusedNoteId, setFocusedNoteId] = useState<number | null>(null);
   const [activeView, setActiveView] = useState("home");
   const [reordering, setReordering] = useState(false);
+  const [activeEditor, setActiveEditor] = useState<"new" | number | null>(null);
   useFocusEffect(useCallback(() => {
     if (view !== "todo") return;
     setActiveView("todo");
@@ -70,16 +78,44 @@ export default function Index() {
   const search = useNoteSearch(visibleNotes, editingNoteId, editingText);
   const { close: resetSearch } = search;
   const isEditingCard = editingNoteId !== null;
-  const hasContent = noteText.trim().length > 0;
+  const hasContent = hasNoteContent(draft);
   const {
     visible: drawerVisible, width: drawerWidth, open: openDrawer, close: closeDrawer,
     panGesture: drawerPanGesture, contentStyle: appShiftStyle, panelStyle: drawerPanelStyle, scrimStyle,
   } = useFolderDrawer(!search.visible);
+  const attachmentEnabled = storageStatus === "ready" && !search.visible && !reordering && !drawerVisible;
+  const canDismissKeyboard = attachmentEnabled && (activeEditor === "new" ? activeView === "home"
+    : activeEditor !== null && editingNoteId === activeEditor);
+  const attachmentTarget = resolvePhotoAttachmentTarget(editingNoteId, activeView, notes);
+  const { attachPhotos, isPickingPhotos } = usePhotoAttachment({
+    target: attachmentTarget,
+    enabled: attachmentEnabled,
+    onAttach: (target, photos) => {
+      if (target === "new") appendDraftPhotos(photos);
+      else {
+        const timestamp = Date.now();
+        setNotes((current) => current.map((note) => note.id === target
+          ? { ...note, photos: [...(note.photos ?? []), ...photos], timestamp } : note));
+        setEditingTimestamp(timestamp);
+      }
+    },
+    onRestoreFocus: (target) => {
+      if (target === "new") inputRef.current?.focus();
+      else editInputRef.current?.focus();
+    },
+  });
+  const canAttachPhotos = attachmentEnabled && attachmentTarget !== null && !isPickingPhotos;
 
-  const handleTextChange = (text: string) => {
-    setNoteText(text);
-    setNoteTimestamp(text.trim().length > 0 ? Date.now() : undefined);
-  };
+  const removePhoto = useCallback((target: "new" | number, photo: NotePhoto) => {
+    const timestamp = Date.now();
+    if (target === "new") {
+      removeDraftPhoto(photo);
+    } else {
+      setNotes((current) => current.map((note) => note.id === target
+        ? { ...note, photos: note.photos?.filter((item) => item.fileName !== photo.fileName), timestamp } : note));
+      setEditingTimestamp(timestamp);
+    }
+  }, [removeDraftPhoto, setNotes]);
 
   const createFolder = () => {
     if (folders.length >= 12) {
@@ -107,8 +143,8 @@ export default function Index() {
     if (!note) return;
     const trashTarget = targetId === folders.length;
     const targetFolder = targetId < folders.length ? folders[targetId] : undefined;
-    if (targetFolder?.id === "todo" && !isValidTodoText(note.text)) {
-      Alert.alert("투두로 저장할 수 없어요", "투두는 줄바꿈 없이 30자 이내로 작성해야 합니다.");
+    if (targetFolder?.id === "todo" && (!isValidTodoText(note.text) || (note.photos?.length ?? 0) > 0)) {
+      Alert.alert("투두로 저장할 수 없어요", "투두는 사진과 줄바꿈 없이 30자 이내의 글로 작성해야 합니다.");
       return;
     }
     const folderId = targetFolder?.id ?? null;
@@ -121,8 +157,6 @@ export default function Index() {
         return moving ? moveNotesToDestination(current, [{ ...moving, timestamp: Date.now() }], { folderId, state }) : current;
       });
     }
-    setNoteText("");
-    setNoteTimestamp(undefined);
     setEditingNoteId(null);
     setFocusedNoteId(null);
     Keyboard.dismiss();
@@ -136,9 +170,10 @@ export default function Index() {
         style: "destructive",
         onPress: () => {
           const now = Date.now();
-          const unsavedNote: StoredNote | null = noteText.trim() ? {
+          const unsavedNote: StoredNote | null = hasContent ? {
             id: allocateNoteId(),
             text: noteText,
+            photos: notePhotos,
             timestamp: noteTimestamp ?? now,
             folderId: null,
             state: "trash",
@@ -151,8 +186,7 @@ export default function Index() {
             if (unsavedNote) moving.push(unsavedNote);
             return moveNotesToDestination(current, moving, { folderId: null, state: "trash" });
           });
-          setNoteText("");
-          setNoteTimestamp(undefined);
+          clearDraft();
           setEditingNoteId(null);
           setFocusedNoteId(null);
           Keyboard.dismiss();
@@ -220,14 +254,14 @@ export default function Index() {
     const note: Note = {
       id: allocateNoteId(),
       text: noteText,
+      photos: notePhotos,
       timestamp: noteTimestamp ?? Date.now(),
       sortOrder: nextNoteOrder(visibleNotes),
       folderId: null,
       state: "draft",
     };
     setNotes((current) => [...current, note]);
-    setNoteText("");
-    setNoteTimestamp(undefined);
+    clearDraft();
     inputRef.current?.blur();
     Keyboard.dismiss();
   };
@@ -331,7 +365,8 @@ export default function Index() {
               {reordering ? (
                 <NativeCheckButton onPress={() => setReordering(false)} />
               ) : activeView === "home" ? (
-                <HomeKebabMenu onSearch={openSearch} isDark={isDark} onReorder={() => setReordering(true)} onDelete={confirmMoveAllDraftsToTrash} onSettings={() => { Keyboard.dismiss(); router.push("/settings"); }} />
+                <HomeKebabMenu onAttachPhotos={() => { void attachPhotos(); }} canAttachPhotos={canAttachPhotos}
+                  onSearch={openSearch} isDark={isDark} onReorder={() => setReordering(true)} onDelete={confirmMoveAllDraftsToTrash} onSettings={openSettings} />
               ) : (
                 <FolderKebabMenu
                   onSearch={openSearch}
@@ -340,9 +375,7 @@ export default function Index() {
                   onSettings={openSettings}
                   onEmptyTrash={confirmEmptyTrash}
                   showEmptyTrash={activeView === "trash"}
-                  onRenameFolder={(name) => { if (activeFolder) renameFolder(activeFolder, name); }}
                   onRequestRenameFolder={() => { if (activeFolder) requestRenameFolder(activeFolder); }}
-                  folderName={activeFolder?.name}
                   onDeleteFolder={() => { if (activeFolder) confirmDeleteFolder(activeFolder); }}
                   showFolderActions={activeFolder?.kind === "custom"}
                 />
@@ -359,6 +392,7 @@ export default function Index() {
           isTrashView={activeView === "trash"}
           editing={isEditingCard || search.visible}
           reordering={reordering}
+          keyboardInset={keyboardHeight > 0 ? keyboardHeight + (canDismissKeyboard ? EDITOR_KEYBOARD_TOOLBAR_INSET : 0) : 0}
           searchTarget={search.target}
           onDrop={onDrop}
           onReorder={(ids) => reorderNotes(ids, activeView)}
@@ -393,6 +427,8 @@ export default function Index() {
                 setEditingText(text);
                 setEditingTimestamp(Date.now());
               }}
+              onInputFocus={() => setActiveEditor(note.id)}
+              onRemovePhoto={(photo) => removePhoto(note.id, photo)}
             />
           )}
         >
@@ -405,19 +441,28 @@ export default function Index() {
                 accessibilityHint="떠오른 생각을 자유롭게 입력하세요"
                 autoFocus
                 multiline
-                onChangeText={handleTextChange}
+                onChangeText={changeDraftText}
+                onFocus={() => {
+                  if (editingNoteId !== null) {
+                    saveEditingNote();
+                    setEditingNoteId(null);
+                  }
+                  setActiveEditor("new");
+                }}
                 value={noteText}
                 scrollEnabled={false}
                 selectionColor={ACCENT}
-                style={[styles.editorInput, styles.newNoteInput, noteTextStyle, { color: isDark ? "#F5F5F2" : "#171717" }]}
+                style={[styles.editorInput, styles.newNoteInput, notePhotos.length > 0 && { minHeight: 44 },
+                  noteTextStyle, { color: isDark ? "#F5F5F2" : "#171717" }]}
               />
-              {noteText.length === 0 && (
+              {noteText.length === 0 && notePhotos.length === 0 && (
                 <View pointerEvents="none" style={styles.newNotePlaceholderWrap}>
                   <NativeText style={[styles.editorInput, noteTextStyle, { color: isDark ? "#747474" : "#A0A0A0" }]}>
                     {notePlaceholder}
                   </NativeText>
                 </View>
               )}
+              <NotePhotos photos={notePhotos} onRemove={(photo) => removePhoto("new", photo)} />
             </View>
           ) : null}
         </DraggableNotes> : (
@@ -429,6 +474,8 @@ export default function Index() {
         )}
         </View>
         </Animated.View>
+        <EditorKeyboardToolbar visible={canDismissKeyboard} canAttachPhotos={canAttachPhotos}
+          keyboardHeight={keyboardHeight} isDark={isDark} onAttachPhotos={() => { void attachPhotos(); }} />
         {search.visible && <NoteSearch
           folderName={viewTitle} isDark={isDark} topInset={insets.top} bottomInset={insets.bottom}
           query={search.query} total={search.total} activeIndex={search.activeIndex}

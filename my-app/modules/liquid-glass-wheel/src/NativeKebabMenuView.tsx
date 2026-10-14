@@ -1,26 +1,25 @@
 import { requireNativeView, requireOptionalNativeModule } from "expo";
 import { Platform, type ViewProps } from "react-native";
 
-type NativeKebabMenuProps = ViewProps & {
-  isDark: boolean;
-  showsDeleteAction?: boolean;
-  showsEmptyTrashAction?: boolean;
-  showsFolderActions?: boolean;
-  folderName?: string;
-  onDelete?: () => void;
-  onEmptyTrash?: () => void;
-  onRenameFolder?: (event: { nativeEvent: { name: string } }) => void;
-  onDeleteFolder?: () => void;
-  onSearch: () => void;
-  onReorder: () => void;
-  onSettings: () => void;
+export type NativeKebabMenuAction = {
+  id: string;
+  title: string;
+  systemImage: string;
+  destructive: boolean;
+  disabled: boolean;
 };
 
-// Older development builds use the SwiftUI fallback so search works before a native rebuild.
+type NativeKebabMenuProps = ViewProps & {
+  isDark: boolean;
+  actions: NativeKebabMenuAction[];
+  onAction: (event: { nativeEvent: { id: string } }) => void;
+};
+
+// Older development builds keep working through the SwiftUI renderer until rebuilt.
 const nativeModule = Platform.OS === "ios"
-  ? requireOptionalNativeModule<{ hasNativeKebabMenu?: boolean; hasNativeKebabSearch?: boolean }>("LiquidGlassWheel")
+  ? requireOptionalNativeModule<{ hasConfigurableKebabMenu?: boolean }>("LiquidGlassWheel")
   : null;
 
-export default nativeModule?.hasNativeKebabMenu && nativeModule.hasNativeKebabSearch
+export default nativeModule?.hasConfigurableKebabMenu
   ? requireNativeView<NativeKebabMenuProps>("LiquidGlassWheel", "NativeKebabMenuView")
   : null;

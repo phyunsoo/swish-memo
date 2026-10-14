@@ -10,6 +10,8 @@ import { GlassButton, GLASS_BUTTON_SIZE } from "./glass-button";
 import { GlassTextButton, TEXT_BUTTON_WIDTH } from "./glass-text-button";
 
 import { getNoteColors } from "@/theme/note-colors";
+import { NotePhotos } from "./note-photos";
+import type { NotePhoto } from "@/lib/note-photos";
 
 const ACCENT = "#E7A000";
 const BUTTON_HEIGHT = GLASS_BUTTON_SIZE;
@@ -39,10 +41,13 @@ type Props = {
   onComplete: () => void;
   onEdit: () => void;
   onChangeText: (text: string) => void;
+  onInputFocus: () => void;
+  onRemovePhoto: (photo: NotePhoto) => void;
 };
 
 export function NoteCard({ note, reorderHandle, isDark, editing, reordering, editingText,
-  editInputRef, noteFontSize, markdownEnabled, hyperlinksEnabled, search, onComplete, onEdit, onChangeText }: Props) {
+  editInputRef, noteFontSize, markdownEnabled, hyperlinksEnabled, search, onComplete, onEdit, onChangeText,
+  onInputFocus, onRemovePhoto }: Props) {
   const noteTextStyle = getNoteTextStyle(noteFontSize);
   const colors = getNoteColors(isDark);
   return (
@@ -89,6 +94,7 @@ export function NoteCard({ note, reorderHandle, isDark, editing, reordering, edi
           editable={!search.visible}
           value={editingText}
           onChangeText={onChangeText}
+          onFocus={onInputFocus}
           scrollEnabled={false}
           selectionColor={ACCENT}
           style={[
@@ -120,6 +126,7 @@ export function NoteCard({ note, reorderHandle, isDark, editing, reordering, edi
           </NativeText>
         )
       ) : null}
+      <NotePhotos photos={note.photos} onRemove={editing && !search.visible ? onRemovePhoto : undefined} />
     </View>
   );
 }

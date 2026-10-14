@@ -3,6 +3,7 @@ import { requireOptionalNativeModule } from "expo";
 import { Platform } from "react-native";
 import { normalizeNoteFontSize, NOTE_TEXT_SIZE } from "./note-typography";
 import { DEFAULT_NOTE_PLACEHOLDER } from "./note-placeholder";
+import { deleteRemovedPhotos, type NotePhoto } from "./note-photos";
 
 const databasePromise = SQLite.openDatabaseAsync("swish-memo.db");
 const nativeStore = Platform.OS === "ios" ? requireOptionalNativeModule<{
@@ -24,6 +25,7 @@ export type Folder = {
 export type StoredNote = {
   id: number;
   text: string;
+  photos?: NotePhoto[];
   timestamp: number;
   sortOrder?: number;
   todoGeneration?: string;
@@ -36,6 +38,7 @@ export type AppSnapshot = {
   folders: Folder[];
   notes: StoredNote[];
   draftText: string;
+  draftPhotos: NotePhoto[];
   noteFontSize: number;
   notePlaceholder: string;
   markdownEnabled: boolean;
@@ -48,6 +51,7 @@ export const INITIAL_SNAPSHOT: AppSnapshot = {
   ],
   notes: [],
   draftText: "",
+  draftPhotos: [],
   noteFontSize: NOTE_TEXT_SIZE.default,
   notePlaceholder: DEFAULT_NOTE_PLACEHOLDER,
   markdownEnabled: false,
@@ -73,6 +77,7 @@ async function loadLegacySnapshot(): Promise<AppSnapshot> {
       folders: Array.isArray(parsed.folders) ? parsed.folders : INITIAL_SNAPSHOT.folders,
       notes: Array.isArray(parsed.notes) ? parsed.notes : [],
       draftText: typeof parsed.draftText === "string" ? parsed.draftText : "",
+      draftPhotos: Array.isArray(parsed.draftPhotos) ? parsed.draftPhotos : [],
       noteFontSize: normalizeNoteFontSize(parsed.noteFontSize),
       markdownEnabled: parsed.markdownEnabled === true,
       hyperlinksEnabled: parsed.hyperlinksEnabled === true,
@@ -86,11 +91,21 @@ async function loadLegacySnapshot(): Promise<AppSnapshot> {
 }
 
 export async function loadSnapshot(): Promise<AppSnapshot> {
-  if (!sharedStore) return loadLegacySnapshot();
+  if (!sharedStore) {
+    const snapshot = await loadLegacySnapshot();
+    lastSavedSnapshot = snapshot;
+    return snapshot;
+  }
   const existing = await sharedStore.loadMemoSnapshot();
-  if (existing) return normalizeSnapshot(existing);
+  if (existing) {
+    const snapshot = normalizeSnapshot(existing);
+    lastSavedSnapshot = snapshot;
+    return snapshot;
+  }
   const legacy = await loadLegacySnapshot();
-  return normalizeSnapshot(await sharedStore.initializeMemoStore(JSON.stringify(legacy)));
+  const snapshot = normalizeSnapshot(await sharedStore.initializeMemoStore(JSON.stringify(legacy)));
+  lastSavedSnapshot = snapshot;
+  return snapshot;
 }
 
 function normalizeSnapshot(json: string): AppSnapshot {
@@ -98,12 +113,21 @@ function normalizeSnapshot(json: string): AppSnapshot {
   return { ...INITIAL_SNAPSHOT, ...parsed, noteFontSize: normalizeNoteFontSize(parsed.noteFontSize) };
 }
 
+let lastSavedSnapshot: AppSnapshot | undefined;
+
 export async function saveSnapshot(snapshot: AppSnapshot): Promise<AppSnapshot> {
-  if (sharedStore) return normalizeSnapshot(await sharedStore.saveMemoSnapshot(JSON.stringify(snapshot)));
-  const db = await databasePromise;
-  await db.runAsync(
-    "INSERT INTO app_state (id, value) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET value = excluded.value",
-    JSON.stringify(snapshot),
-  );
-  return snapshot;
+  let saved = snapshot;
+  if (sharedStore) {
+    saved = normalizeSnapshot(await sharedStore.saveMemoSnapshot(JSON.stringify(snapshot)));
+  } else {
+    const db = await databasePromise;
+    await db.runAsync(
+      "INSERT INTO app_state (id, value) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET value = excluded.value",
+      JSON.stringify(snapshot),
+    );
+  }
+  // Files follow the same committed note lifecycle, including trash expiry.
+  deleteRemovedPhotos(lastSavedSnapshot, snapshot, saved);
+  lastSavedSnapshot = saved;
+  return saved;
 }

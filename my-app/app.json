@@ -39,6 +39,14 @@
         }
       ],
       "expo-sqlite",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "메모에 첨부할 사진을 선택합니다.",
+          "cameraPermission": false,
+          "microphonePermission": false
+        }
+      ],
       "./plugins/with-todo-widget"
     ],
     "experiments": {

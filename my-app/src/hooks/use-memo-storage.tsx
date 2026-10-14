@@ -1,8 +1,10 @@
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { INITIAL_SNAPSHOT, loadSnapshot, saveSnapshot, type AppSnapshot, type Folder, type StoredNote } from "@/lib/local-store";
 import { NOTE_TEXT_SIZE } from "@/lib/note-typography";
 import { Alert, AppState } from "react-native";
 import { createMemoPersistence, mergeWidgetCompletions } from "@/lib/memo-persistence";
+import type { NotePhoto } from "@/lib/note-photos";
+import { emptyNoteDraft, updateNoteDraft } from "@/lib/note-draft";
 
 type StorageStatus = "loading" | "ready" | "error";
 
@@ -10,7 +12,19 @@ function useMemoStorageState() {
   const nextNoteId = useRef(0);
   const [notes, setNotes] = useState<StoredNote[]>([]);
   const [folders, setFolders] = useState<Folder[]>(INITIAL_SNAPSHOT.folders);
-  const [noteText, setNoteText] = useState("");
+  const [draft, setDraft] = useState(emptyNoteDraft);
+  const changeDraftText = useCallback((text: string) => {
+    setDraft((current) => updateNoteDraft(current, { text }));
+  }, []);
+  const appendDraftPhotos = useCallback((photos: NotePhoto[]) => {
+    setDraft((current) => updateNoteDraft(current, { photos: [...current.photos, ...photos] }));
+  }, []);
+  const removeDraftPhoto = useCallback((photo: NotePhoto) => {
+    setDraft((current) => updateNoteDraft(current, {
+      photos: current.photos.filter((item) => item.fileName !== photo.fileName),
+    }));
+  }, []);
+  const clearDraft = useCallback(() => setDraft(emptyNoteDraft()), []);
   const [noteFontSize, setNoteFontSize] = useState<number>(NOTE_TEXT_SIZE.default);
   const [notePlaceholder, setNotePlaceholder] = useState(INITIAL_SNAPSHOT.notePlaceholder);
   const [markdownEnabled, setMarkdownEnabled] = useState(INITIAL_SNAPSHOT.markdownEnabled);
@@ -31,7 +45,7 @@ function useMemoStorageState() {
       if (!active) return;
       setFolders(snapshot.folders);
       setNotes(snapshot.notes);
-      setNoteText(snapshot.draftText);
+      setDraft({ text: snapshot.draftText, photos: snapshot.draftPhotos });
       setNoteFontSize(snapshot.noteFontSize);
       setNotePlaceholder(snapshot.notePlaceholder);
       setMarkdownEnabled(snapshot.markdownEnabled);
@@ -49,9 +63,9 @@ function useMemoStorageState() {
 
   useEffect(() => {
     if (!storageReady) return;
-    const snapshot: AppSnapshot = { folders, notes, draftText: noteText, noteFontSize, notePlaceholder, markdownEnabled, hyperlinksEnabled };
+    const snapshot: AppSnapshot = { folders, notes, draftText: draft.text, draftPhotos: draft.photos, noteFontSize, notePlaceholder, markdownEnabled, hyperlinksEnabled };
     void persistence.save(snapshot);
-  }, [folders, notes, noteText, noteFontSize, notePlaceholder, markdownEnabled, hyperlinksEnabled, storageReady, persistence]);
+  }, [folders, notes, draft, noteFontSize, notePlaceholder, markdownEnabled, hyperlinksEnabled, storageReady, persistence]);
 
   useEffect(() => {
     if (!storageReady) return;
@@ -67,7 +81,7 @@ function useMemoStorageState() {
     return nextNoteId.current;
   };
 
-  return { notes, setNotes, folders, setFolders, noteText, setNoteText, noteFontSize, setNoteFontSize, notePlaceholder, setNotePlaceholder, markdownEnabled, setMarkdownEnabled, hyperlinksEnabled, setHyperlinksEnabled, allocateNoteId, storageStatus };
+  return { notes, setNotes, folders, setFolders, draft, changeDraftText, appendDraftPhotos, removeDraftPhoto, clearDraft, noteFontSize, setNoteFontSize, notePlaceholder, setNotePlaceholder, markdownEnabled, setMarkdownEnabled, hyperlinksEnabled, setHyperlinksEnabled, allocateNoteId, storageStatus };
 }
 
 const MemoStorageContext = createContext<ReturnType<typeof useMemoStorageState> | null>(null);

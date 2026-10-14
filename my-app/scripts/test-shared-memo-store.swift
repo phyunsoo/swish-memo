@@ -9,9 +9,9 @@ struct SharedMemoStoreTests {
     defer { try? FileManager.default.removeItem(at: directory) }
     let store = try SharedMemoStore(url: directory.appendingPathComponent("test.db"))
     let original = """
-    {"folders":[{"id":"todo"}],"draftText":"아직 작성 중","notes":[
+    {"folders":[{"id":"todo"}],"draftText":"아직 작성 중","draftPhotos":[{"fileName":"draft.jpg","width":100,"height":200}],"notes":[
       {"id":1,"text":"할 일","timestamp":10,"sortOrder":1,"folderId":"todo","state":"saved"},
-      {"id":2,"text":"다른 메모","timestamp":20,"folderId":null,"state":"draft"}
+      {"id":2,"text":"다른 메모","photos":[{"fileName":"note.jpg","width":200,"height":100}],"timestamp":20,"folderId":null,"state":"draft"}
     ]}
     """
     _ = try store.initialize(original)
@@ -25,6 +25,8 @@ struct SharedMemoStoreTests {
     check(try notes()[0]["state"] as? String == "trash")
     check(try notes()[0]["deletedAt"] as? Double == 1000)
     check(try snapshot()["draftText"] as? String == "아직 작성 중")
+    check(try (snapshot()["draftPhotos"] as? [[String: Any]])?.first?["fileName"] as? String == "draft.jpg")
+    check(try (notes()[1]["photos"] as? [[String: Any]])?.first?["fileName"] as? String == "note.jpg")
     check(try !store.complete(id: 1, generation: "legacy", now: 2000), "Repeated taps must be idempotent")
     // Simulate a stale React save arriving after the extension's completion.
     _ = try store.save(original, now: 2000)
