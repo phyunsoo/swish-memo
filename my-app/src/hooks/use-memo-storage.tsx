@@ -4,6 +4,8 @@ import { NOTE_TEXT_SIZE } from "@/lib/note-typography";
 import { Alert, AppState } from "react-native";
 import { createMemoPersistence, mergeWidgetCompletions } from "@/lib/memo-persistence";
 
+type StorageStatus = "loading" | "ready" | "error";
+
 function useMemoStorageState() {
   const nextNoteId = useRef(0);
   const [notes, setNotes] = useState<StoredNote[]>([]);
@@ -12,7 +14,8 @@ function useMemoStorageState() {
   const [noteFontSize, setNoteFontSize] = useState<number>(NOTE_TEXT_SIZE.default);
   const [notePlaceholder, setNotePlaceholder] = useState(INITIAL_SNAPSHOT.notePlaceholder);
   const [markdownEnabled, setMarkdownEnabled] = useState(INITIAL_SNAPSHOT.markdownEnabled);
-  const [storageReady, setStorageReady] = useState(false);
+  const [storageStatus, setStorageStatus] = useState<StorageStatus>("loading");
+  const storageReady = storageStatus === "ready";
   const [persistence] = useState(() => createMemoPersistence<AppSnapshot>({
     save: saveSnapshot,
     load: loadSnapshot,
@@ -32,8 +35,10 @@ function useMemoStorageState() {
       setNotePlaceholder(snapshot.notePlaceholder);
       setMarkdownEnabled(snapshot.markdownEnabled);
       nextNoteId.current = Math.max(0, ...snapshot.notes.map((note) => note.id + 1));
-      setStorageReady(true);
+      setStorageStatus("ready");
     }).catch((error) => {
+      if (!active) return;
+      setStorageStatus("error");
       console.warn("메모 저장소를 불러오지 못했습니다.", error);
       Alert.alert("메모를 불러오지 못했어요", "앱을 다시 실행해 주세요. 기존 데이터를 보호하기 위해 저장을 중지했습니다.");
     });
@@ -60,7 +65,7 @@ function useMemoStorageState() {
     return nextNoteId.current;
   };
 
-  return { notes, setNotes, folders, setFolders, noteText, setNoteText, noteFontSize, setNoteFontSize, notePlaceholder, setNotePlaceholder, markdownEnabled, setMarkdownEnabled, allocateNoteId };
+  return { notes, setNotes, folders, setFolders, noteText, setNoteText, noteFontSize, setNoteFontSize, notePlaceholder, setNotePlaceholder, markdownEnabled, setMarkdownEnabled, allocateNoteId, storageStatus };
 }
 
 const MemoStorageContext = createContext<ReturnType<typeof useMemoStorageState> | null>(null);

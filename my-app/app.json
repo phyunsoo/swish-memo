@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "my-app",
-    "slug": "my-app",
+    "name": "swish 메모",
+    "slug": "swish-memo",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -9,7 +9,11 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/expo.icon",
-      "bundleIdentifier": "com.phyunsoo.my-app"
+      "bundleIdentifier": "com.phyunsoo.swishmemo",
+      "appleTeamId": "87A9TG46YC",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -40,6 +44,30 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "build": {
+          "experimental": {
+            "ios": {
+              "appExtensions": [
+                {
+                  "targetName": "SwishTodoWidget",
+                  "bundleIdentifier": "com.phyunsoo.swishmemo.todo-widget",
+                  "entitlements": {
+                    "com.apple.security.application-groups": [
+                      "group.com.phyunsoo.swishmemo"
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "projectId": "8f1e9931-ff04-49c6-a1d4-43e480bf1338"
+      }
+    },
+    "owner": "phyunsoo"
   }
 }

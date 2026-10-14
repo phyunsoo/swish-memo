@@ -83,7 +83,7 @@ export default function SettingsScreen({ mode, onModeChange, noteFontSize, onNot
                 onPress={() => setActiveSheet("textSize")}
               />
               <Switch
-                label="Markdown 문법"
+                label="마크다운 문법"
                 value={markdownEnabled}
                 onValueChange={onMarkdownEnabledChange}
                 modifiers={rowModifiers}

@@ -5,6 +5,7 @@ import Markdown, {
   type MarkdownStyleMap,
   type RenderRules,
 } from "@ronradtke/react-native-markdown-display";
+import { getNoteColors } from "@/theme/note-colors";
 import { getNoteTextStyle } from "@/lib/note-typography";
 
 // Keep memo line breaks and punctuation as written. HTML stays disabled.
@@ -33,12 +34,15 @@ function openLink(url: string) {
 export const NoteMarkdown = memo(function NoteMarkdown({
   text,
   fontSize,
+  isDark = false,
 }: {
   text: string;
   fontSize: number;
+  isDark?: boolean;
 }) {
   const styles = useMemo<MarkdownStyleMap>(() => {
     const typography = getNoteTextStyle(fontSize);
+    const colors = getNoteColors(isDark);
     const heading = (scale: number) => ({
       fontSize: fontSize * scale,
       lineHeight: fontSize * scale * 1.4,
@@ -49,13 +53,13 @@ export const NoteMarkdown = memo(function NoteMarkdown({
     const code = {
       ...getNoteTextStyle(fontSize * 0.85),
       fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
-      color: "#171717",
-      backgroundColor: "#EFEFF2",
-      borderColor: "#D8D8DC",
+      color: colors.text,
+      backgroundColor: colors.inset,
+      borderColor: colors.codeBorder,
       borderRadius: 6,
     };
     return {
-      body: { ...typography, color: "#171717" },
+      body: { ...typography, color: colors.text },
       paragraph: { marginTop: 0, marginBottom: 8 },
       heading1: heading(1.5),
       heading2: heading(1.3),
@@ -66,8 +70,8 @@ export const NoteMarkdown = memo(function NoteMarkdown({
       bullet_list_icon: typography,
       ordered_list_icon: typography,
       blockquote: {
-        backgroundColor: "#EFEFF2",
-        borderColor: "#C7C7CC",
+        backgroundColor: colors.inset,
+        borderColor: colors.quoteBorder,
         borderLeftWidth: 3,
         marginLeft: 0,
         paddingHorizontal: 10,
@@ -75,12 +79,12 @@ export const NoteMarkdown = memo(function NoteMarkdown({
       },
       code_inline: { ...code, padding: 2 },
       code_block: { ...code, padding: 10, marginVertical: 6 },
-      link: { color: "#956200", textDecorationLine: "underline" },
-      hr: { backgroundColor: "#CED1D6", marginVertical: 10 },
-      table: { borderColor: "#CED1D6" },
-      tr: { borderColor: "#CED1D6" },
+      link: { color: colors.link, textDecorationLine: "underline" },
+      hr: { backgroundColor: colors.border, marginVertical: 10 },
+      table: { borderColor: colors.border },
+      tr: { borderColor: colors.border },
     };
-  }, [fontSize]);
+  }, [fontSize, isDark]);
 
   return (
     <View style={{ width: "100%" }}>
@@ -89,7 +93,7 @@ export const NoteMarkdown = memo(function NoteMarkdown({
         style={styles}
         rules={rules}
         textcomponent={SelectableText}
-        colorScheme="light"
+        colorScheme={isDark ? "dark" : "light"}
         onLinkPress={openLink}
       >
         {text}

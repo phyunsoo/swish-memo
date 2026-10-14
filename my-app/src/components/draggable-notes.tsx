@@ -503,9 +503,9 @@ export function DraggableNotes<T extends Note>({ notes, folders, renderNote, chi
             </DraggableRow>}
             </ReorderRow>
           ))}
-          <Animated.View layout={reordering ? undefined : NOTE_REFLOW}>
+          <View>
             {children}
-          </Animated.View>
+          </View>
         </Animated.ScrollView>
       </GestureDetector>
       <FolderQuickMenu menu={menu} isDark={isDark} folders={folders} isTrashView={isTrashView} />

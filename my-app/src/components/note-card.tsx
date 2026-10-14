@@ -9,6 +9,8 @@ import { NoteMarkdown } from "./note-markdown";
 import { GlassButton, GLASS_BUTTON_SIZE } from "./glass-button";
 import { GlassTextButton, TEXT_BUTTON_WIDTH } from "./glass-text-button";
 
+import { getNoteColors } from "@/theme/note-colors";
+
 const ACCENT = "#E7A000";
 const BUTTON_HEIGHT = GLASS_BUTTON_SIZE;
 
@@ -41,13 +43,14 @@ type Props = {
 export function NoteCard({ note, reorderHandle, isDark, editing, reordering, editingText,
   editInputRef, noteFontSize, markdownEnabled, search, onComplete, onEdit, onChangeText }: Props) {
   const noteTextStyle = getNoteTextStyle(noteFontSize);
+  const colors = getNoteColors(isDark);
   return (
     <View
       key={note.id}
       style={[
         styles.organizingCard,
-        isDark && styles.darkOrganizingCard,
-        editing && { backgroundColor: "#FFFFFF" },
+        { backgroundColor: colors.card, borderColor: colors.border },
+        editing && { backgroundColor: colors.editingCard },
       ]}
     >
       <View style={[styles.cardHeader, search.visible && { minHeight: BUTTON_HEIGHT }]}>
@@ -55,22 +58,22 @@ export function NoteCard({ note, reorderHandle, isDark, editing, reordering, edi
           accessibilityLabel="메모 작성 또는 수정 시간"
           style={[
             styles.noteTimestamp,
-            { color: "#77777C" },
+            { color: colors.secondaryText },
           ]}
         >
           {formatTimestamp(note.timestamp)}
         </NativeText>
         <View style={styles.cardHeaderActions}>
           {!search.visible && !reordering && !editing && note.folderId === "todo" && note.state === "saved" && (
-            <GlassButton label={`${note.text} 완료`} symbol="circle" tint={isDark ? "#0A84FF" : "#007AFF"}
-              glassTint={isDark ? "#343438" : "#F2F2F5"}
+            <GlassButton label={`${note.text} 완료`} symbol="circle" tint={colors.todo}
+              glassTint={colors.control}
               onPress={onComplete} />
           )}
           {!search.visible && !reordering && <GlassTextButton
             title={editing ? "완료" : "편집"}
             width={TEXT_BUTTON_WIDTH}
             height={BUTTON_HEIGHT}
-            glassTint="#F2F2F5"
+            glassTint={colors.control}
             onPress={onEdit}
           />}
           {reorderHandle}
@@ -90,7 +93,7 @@ export function NoteCard({ note, reorderHandle, isDark, editing, reordering, edi
           style={[
             styles.editorInput,
             noteTextStyle,
-            { color: "#171717" },
+            { color: colors.text },
             search.visible && { display: "none" },
           ]}
         />
@@ -102,14 +105,14 @@ export function NoteCard({ note, reorderHandle, isDark, editing, reordering, edi
           matches={search.matchesByNote.get(note.id) ?? EMPTY_TEXT_MATCHES}
           selectedStart={search.selectedMatch?.noteId === note.id ? search.selectedMatch.start : null}
           contentOffset={styles.organizingCard.marginTop}
-          style={[styles.editorInput, noteTextStyle, { color: "#171717" }]}
+          style={[styles.editorInput, noteTextStyle, { color: colors.text }]}
           onSelectedOffset={search.reportOffset}
         />
       ) : !editing ? (
         markdownEnabled ? (
-          <NoteMarkdown text={note.text} fontSize={noteFontSize} />
+          <NoteMarkdown text={note.text} fontSize={noteFontSize} isDark={isDark} />
         ) : (
-          <NativeText selectable style={[styles.editorInput, noteTextStyle, { color: "#171717" }]}>
+          <NativeText selectable style={[styles.editorInput, noteTextStyle, { color: colors.text }]}>
             {note.text}
           </NativeText>
         )
@@ -131,13 +134,8 @@ const styles = StyleSheet.create({
     marginHorizontal: 26,
     paddingHorizontal: 15,
     paddingVertical: 6,
-    backgroundColor: "#FAFAFA",
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "#CED1D6",
     borderRadius: 18,
-  },
-  darkOrganizingCard: {
-    borderColor: "#4A4A4D",
   },
   cardHeader: {
     flexDirection: "row",

@@ -21,7 +21,7 @@ export default function SettingsScreen({ mode, onModeChange, noteFontSize, onNot
       <Text onPress={() => onNoteFontSizeChange(Math.min(NOTE_TEXT_SIZE.max, noteFontSize + NOTE_TEXT_SIZE.step))}>텍스트 크기 키우기 ＋</Text>
     </View>
     <Host matchContents style={{ width: "100%" }}>
-      <Switch label="Markdown 문법" value={markdownEnabled} onValueChange={onMarkdownEnabledChange} />
+      <Switch label="마크다운 문법" value={markdownEnabled} onValueChange={onMarkdownEnabledChange} />
     </Host>
     <Text style={{ fontSize: 21, fontWeight: "600" }}>정보</Text>
     <Text>iCloud　준비 중</Text>

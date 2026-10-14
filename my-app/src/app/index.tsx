@@ -11,10 +11,9 @@ import {
   Text as NativeText,
   TextInput as NativeTextInput,
   View,
-  useWindowDimensions,
 } from "react-native";
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
-import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { GestureDetector } from "react-native-gesture-handler";
 import { NoteSearch } from "@/components/note-search";
 import { useNoteSearch } from "@/hooks/use-note-search";
 import { DraggableNotes } from "@/components/draggable-notes";
@@ -24,8 +23,8 @@ import { FolderDrawer } from "@/components/folder-drawer";
 import { hasFolderName, isValidTodoText, updateNoteContent } from "@/lib/memo-rules";
 import { compareNoteOrder, moveNotesToDestination, nextNoteOrder } from "@/lib/note-order";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Animated, { ReduceMotion, useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
-import { scheduleOnRN } from "react-native-worklets";
+import Animated from "react-native-reanimated";
+import { useFolderDrawer } from "@/hooks/use-folder-drawer";
 import { GlassButton, GLASS_BUTTON_SIZE } from "@/components/glass-button";
 import { HomeKebabMenu } from "@/components/home-kebab-menu";
 import { FolderKebabMenu } from "@/components/folder-kebab-menu";
@@ -33,20 +32,17 @@ import { getNoteTextStyle, NOTE_TEXT_SIZE, NOTE_LINE_HEIGHT } from "@/lib/note-t
 import { useAppearance } from "@/lib/appearance";
 const ACCENT = "#E7A000";
 const BUTTON_HEIGHT = GLASS_BUTTON_SIZE;
-const DRAWER_SPRING = { duration: 500, dampingRatio: 0.8, reduceMotion: ReduceMotion.System };
 
 type Note = StoredNote;
 
 export default function Index() {
   const insets = useSafeAreaInsets();
-  const { width: windowWidth } = useWindowDimensions();
-  const drawerWidth = Math.min(windowWidth * 0.84, 360);
   const router = useRouter();
   const { view } = useLocalSearchParams<{ view?: string }>();
   const { isDark } = useAppearance();
   const inputRef = useRef<InstanceType<typeof NativeTextInput>>(null);
   const editInputRef = useRef<InstanceType<typeof NativeTextInput>>(null);
-  const { notes, setNotes, folders, setFolders, noteText, setNoteText, noteFontSize, notePlaceholder, markdownEnabled, allocateNoteId } = useMemoStorage();
+  const { notes, setNotes, folders, setFolders, noteText, setNoteText, noteFontSize, notePlaceholder, markdownEnabled, allocateNoteId, storageStatus } = useMemoStorage();
   const { completeTodo, reorderNotes } = useNoteActions();
   const noteTextStyle = getNoteTextStyle(noteFontSize);
   const [noteTimestamp, setNoteTimestamp] = useState<number | undefined>();
@@ -54,10 +50,6 @@ export default function Index() {
   const [editingText, setEditingText] = useState("");
   const [editingTimestamp, setEditingTimestamp] = useState<number>(0);
   const [focusedNoteId, setFocusedNoteId] = useState<number | null>(null);
-  const [drawerVisible, setDrawerVisible] = useState(false);
-  const drawerProgress = useSharedValue(0);
-  const drawerGestureStart = useSharedValue(0);
-  const drawerGestureAllowed = useSharedValue(false);
   const [activeView, setActiveView] = useState("home");
   const [reordering, setReordering] = useState(false);
   useFocusEffect(useCallback(() => {
@@ -79,60 +71,10 @@ export default function Index() {
   const { close: resetSearch } = search;
   const isEditingCard = editingNoteId !== null;
   const hasContent = noteText.trim().length > 0;
-  const appShiftStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: drawerProgress.get() * drawerWidth }],
-  }));
-  const drawerPanelStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: (drawerProgress.get() - 1) * drawerWidth }],
-  }));
-  const scrimStyle = useAnimatedStyle(() => ({ opacity: drawerProgress.get() * 0.18 }));
-
-  const openDrawer = () => {
-    setDrawerVisible(true);
-    drawerProgress.set(withSpring(1, DRAWER_SPRING));
-  };
-
-  const closeDrawer = () => {
-    drawerProgress.set(withSpring(0, DRAWER_SPRING, (finished) => {
-      if (finished) scheduleOnRN(setDrawerVisible, false);
-    }));
-  };
-
-  const drawerPanGesture = Gesture.Pan()
-    .enabled(!search.visible)
-    .activeOffsetX([-12, 12])
-    .failOffsetY([-10, 10])
-    .onBegin(() => {
-      const isOpen = drawerProgress.get() > 0.01;
-      drawerGestureStart.set(drawerProgress.get());
-      drawerGestureAllowed.set(isOpen);
-    })
-    .onUpdate((event) => {
-      if (!drawerGestureAllowed.get()) return;
-      const progress = drawerGestureStart.get() + event.translationX / drawerWidth;
-      drawerProgress.set(Math.max(0, Math.min(1, progress)));
-    })
-    .onEnd((event) => {
-      if (!drawerGestureAllowed.get()) return;
-      const progress = drawerGestureStart.get() + event.translationX / drawerWidth;
-      const shouldOpen = event.velocityX > 450
-        ? true
-        : event.velocityX < -450
-          ? false
-          : progress >= 0.5;
-      drawerProgress.set(withSpring(shouldOpen ? 1 : 0, DRAWER_SPRING, (finished) => {
-        if (finished && !shouldOpen) scheduleOnRN(setDrawerVisible, false);
-      }));
-    })
-    .onFinalize((_event, success) => {
-      if (!success && drawerGestureAllowed.get()) {
-        const restoreOpen = drawerGestureStart.get() >= 0.5;
-        drawerProgress.set(withSpring(restoreOpen ? 1 : 0, DRAWER_SPRING, (finished) => {
-          if (finished && !restoreOpen) scheduleOnRN(setDrawerVisible, false);
-        }));
-      }
-      drawerGestureAllowed.set(false);
-    });
+  const {
+    visible: drawerVisible, width: drawerWidth, open: openDrawer, close: closeDrawer,
+    panGesture: drawerPanGesture, contentStyle: appShiftStyle, panelStyle: drawerPanelStyle, scrimStyle,
+  } = useFolderDrawer(!search.visible);
 
   const handleTextChange = (text: string) => {
     setNoteText(text);
@@ -413,7 +355,7 @@ export default function Index() {
           </View>
         </View>}
 
-        <DraggableNotes
+        {storageStatus === "ready" ? <DraggableNotes
           notes={visibleNotes}
           folders={folders}
           isDark={isDark}
@@ -481,7 +423,13 @@ export default function Index() {
               )}
             </View>
           ) : null}
-        </DraggableNotes>
+        </DraggableNotes> : (
+          <View style={styles.storageStatus}>
+            <NativeText accessibilityRole="text" style={{ color: isDark ? "#A1A1A6" : "#77777C", textAlign: "center" }}>
+              {storageStatus === "loading" ? "메모를 불러오는 중…" : "메모를 불러오지 못했어요. 앱을 다시 실행해 주세요."}
+            </NativeText>
+          </View>
+        )}
         </View>
         </Animated.View>
         {search.visible && <NoteSearch
@@ -525,6 +473,7 @@ export default function Index() {
 }
 
 const styles = StyleSheet.create({
+  storageStatus: { flex: 1, justifyContent: "center", alignItems: "center", paddingHorizontal: 26 },
   screen: {
     flex: 1,
   },

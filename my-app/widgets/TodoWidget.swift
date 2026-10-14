@@ -99,12 +99,10 @@ private struct TodoWidgetView: View {
       }
       .tint(.primary)
       if entry.items.isEmpty {
-        Spacer(minLength: 0)
         Link(destination: destination) {
           Text(entry.unavailable ? "앱을 열어 저장소를 확인해 주세요" : "할 일이 없어요")
             .font(.subheadline).foregroundStyle(.secondary)
         }
-        Spacer(minLength: 0)
       } else {
         ForEach(entry.items.prefix(limit)) { item in
           HStack(spacing: 8) {
