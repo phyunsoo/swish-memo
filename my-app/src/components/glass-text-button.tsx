@@ -2,6 +2,8 @@ import { Platform, StyleSheet, View } from "react-native";
 import { Button, Host, Text } from "@expo/ui";
 import { buttonBorderShape, buttonStyle, controlSize, frame } from "@expo/ui/swift-ui/modifiers";
 import { GlassView, isLiquidGlassAvailable } from "expo-glass-effect";
+import { useGlassResumeKey } from "@/hooks/use-glass-resume-key";
+import { useAppearance } from "@/lib/appearance";
 import { GLASS_BUTTON_SIZE } from "./glass-button";
 
 const ACCENT = "#E7A000";
@@ -22,6 +24,8 @@ export function GlassTextButton({
   height?: number;
 }) {
   const usesNativeGlass = Platform.OS === "ios" && isLiquidGlassAvailable();
+  const resumeKey = useGlassResumeKey();
+  const { mode } = useAppearance();
 
   return (
     <View style={[styles.glassButton, styles.doneButton, { width, height }]}>
@@ -31,10 +35,13 @@ export function GlassTextButton({
           glassEffectStyle="regular"
           isInteractive
           tintColor={glassTint}
+          colorScheme={mode}
           style={styles.glassSurface}
         />
       )}
       <Host
+        key={usesNativeGlass ? resumeKey : "fallback"}
+        colorScheme={mode}
         matchContents
         ignoreSafeArea="all"
         seedColor={ACCENT}

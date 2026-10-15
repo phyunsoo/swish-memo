@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Host, Switch } from "@expo/ui";
+import { cloudMemoClient } from "@/lib/cloud-memo-client";
 import { Button, Form, HStack, Image, Section, Spacer, Text, VStack } from "@expo/ui/swift-ui";
 import {
-  accessibilityLabel, alignmentGuide, buttonStyle, font, foregroundStyle, frame, padding,
+  accessibilityLabel, alignmentGuide, buttonStyle, contentShape, font, foregroundStyle, frame, padding, shapes,
 } from "@expo/ui/swift-ui/modifiers";
 import Constants from "expo-constants";
 import { useAppearance } from "@/lib/appearance";
@@ -32,7 +33,10 @@ function InformationRow({ title, value }: { title: string; value: string }) {
 function SettingsActionRow({ title, value, onPress }: { title: string; value: string; onPress: () => void }) {
   return (
     <Button onPress={onPress} modifiers={[buttonStyle("plain"), ...rowModifiers]}>
-      <HStack spacing={8} modifiers={[frame({ maxWidth: Infinity })]}>
+      <HStack spacing={8} modifiers={[
+        frame({ maxWidth: Infinity, minHeight: 44, alignment: "leading" }),
+        contentShape(shapes.rectangle()),
+      ]}>
         <Text>{title}</Text>
         <Spacer />
         <Text modifiers={[secondary]}>{value}</Text>
@@ -44,11 +48,18 @@ function SettingsActionRow({ title, value, onPress }: { title: string; value: st
 
 export default function SettingsScreen({ mode, onModeChange, noteFontSize, onNoteFontSizeChange, notePlaceholder, onNotePlaceholderChange, markdownEnabled, onMarkdownEnabledChange, hyperlinksEnabled, onHyperlinksEnabledChange, onClose }: SettingsScreenProps) {
   const { isDark } = useAppearance();
+  const [icloudStatus, setIcloudStatus] = useState(cloudMemoClient.getStatusLabel);
   const [activeSheet, setActiveSheet] = useState<SettingsSheet | null>(null);
   const backgroundColor = isDark ? "#000000" : "#F2F2F7";
   const closeSheet = (sheet: SettingsSheet) => {
     setActiveSheet((current) => current === sheet ? null : current);
   };
+
+  useEffect(() => {
+    const unsubscribe = cloudMemoClient.subscribe(setIcloudStatus);
+    void cloudMemoClient.refreshStatus();
+    return unsubscribe;
+  }, []);
 
   return (
     <>
@@ -96,7 +107,7 @@ export default function SettingsScreen({ mode, onModeChange, noteFontSize, onNot
               />
             </Section>
             <Section title="정보">
-              <InformationRow title="iCloud" value="준비 중" />
+              <InformationRow title="iCloud" value={icloudStatus} />
               <InformationRow title="버전" value={Constants.expoConfig?.version ?? "—"} />
               <InformationRow title="개인정보 처리방침" value="준비 중" />
             </Section>

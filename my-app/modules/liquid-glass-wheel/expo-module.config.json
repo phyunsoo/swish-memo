@@ -1,6 +1,6 @@
 {
   "platforms": ["apple"],
   "apple": {
-    "modules": ["LiquidGlassWheelModule", "MemoStoreModule"]
+    "modules": ["LiquidGlassWheelModule", "MemoStoreModule", "CloudMemoSyncModule"]
   }
 }

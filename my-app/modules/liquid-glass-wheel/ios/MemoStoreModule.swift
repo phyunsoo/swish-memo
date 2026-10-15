@@ -14,9 +14,7 @@ public class MemoStoreModule: Module {
       return result
     }.runOnQueue(memoQueue)
     AsyncFunction("loadMemoSnapshot") { () -> String? in
-      let result = try SharedMemoStore.shared().load()
-      WidgetCenter.shared.reloadTimelines(ofKind: "SwishTodoWidget")
-      return result
+      try SharedMemoStore.shared().load()
     }.runOnQueue(memoQueue)
     AsyncFunction("saveMemoSnapshot") { (json: String) -> String in
       let store = try SharedMemoStore.shared()

@@ -1,17 +1,36 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
-import { INITIAL_SNAPSHOT, loadSnapshot, saveSnapshot, type AppSnapshot, type Folder, type StoredNote } from "@/lib/local-store";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode, type SetStateAction } from "react";
+import { INITIAL_SNAPSHOT, loadSnapshot, saveSnapshot, subscribeToSyncedSnapshot, type AppSnapshot, type Folder, type StoredNote } from "@/lib/local-store";
 import { NOTE_TEXT_SIZE } from "@/lib/note-typography";
 import { Alert, AppState } from "react-native";
-import { createMemoPersistence, mergeWidgetCompletions } from "@/lib/memo-persistence";
+import { createMemoPersistence } from "@/lib/memo-persistence";
 import type { NotePhoto } from "@/lib/note-photos";
+import { mergeCloudSnapshots, normalizeSyncMetadata, updateNotes, updateFolders, type MemoEntities } from "@/lib/memo-sync";
 import { emptyNoteDraft, updateNoteDraft } from "@/lib/note-draft";
 
 type StorageStatus = "loading" | "ready" | "error";
 
 function useMemoStorageState() {
   const nextNoteId = useRef(0);
-  const [notes, setNotes] = useState<StoredNote[]>([]);
-  const [folders, setFolders] = useState<Folder[]>(INITIAL_SNAPSHOT.folders);
+  const [entities, setEntities] = useState<MemoEntities>(() => normalizeSyncMetadata({ notes: [], folders: INITIAL_SNAPSHOT.folders, syncTombstones: [] }));
+  const { notes, folders, syncTombstones } = entities;
+  const setNotes = useCallback((action: SetStateAction<StoredNote[]>) => {
+    const now = Date.now();
+    const creationToken = Math.random().toString(36).slice(2);
+    setEntities((current) => updateNotes(current,
+      typeof action === "function" ? action(current.notes) : action, now, creationToken));
+  }, []);
+  const setFolders = useCallback((action: SetStateAction<Folder[]>) => {
+    const now = Date.now();
+    const changeID = Math.random().toString(36).slice(2);
+    setEntities((current) => updateFolders(current,
+      typeof action === "function" ? action(current.folders) : action, now, changeID));
+  }, []);
+  const applySnapshot = useCallback((snapshot: AppSnapshot) => {
+    setEntities((current) => {
+      const next = mergeCloudSnapshots(current, snapshot);
+      return JSON.stringify(next) === JSON.stringify(current) ? current : next;
+    });
+  }, []);
   const [draft, setDraft] = useState(emptyNoteDraft);
   const changeDraftText = useCallback((text: string) => {
     setDraft((current) => updateNoteDraft(current, { text }));
@@ -34,17 +53,17 @@ function useMemoStorageState() {
   const [persistence] = useState(() => createMemoPersistence<AppSnapshot>({
     save: saveSnapshot,
     load: loadSnapshot,
-    onSnapshot: (snapshot) => setNotes((current) => mergeWidgetCompletions(current, snapshot.notes)),
+    onSnapshot: applySnapshot,
     onError: (error, operation) => console.warn(operation === "save"
       ? "메모 저장에 실패했습니다." : "위젯 완료 상태를 불러오지 못했습니다.", error),
   }));
 
   useEffect(() => {
     let active = true;
+    const unsubscribe = subscribeToSyncedSnapshot(applySnapshot);
     void loadSnapshot().then((snapshot) => {
       if (!active) return;
-      setFolders(snapshot.folders);
-      setNotes(snapshot.notes);
+      setEntities({ notes: snapshot.notes, folders: snapshot.folders, syncTombstones: snapshot.syncTombstones });
       setDraft({ text: snapshot.draftText, photos: snapshot.draftPhotos });
       setNoteFontSize(snapshot.noteFontSize);
       setNotePlaceholder(snapshot.notePlaceholder);
@@ -58,14 +77,14 @@ function useMemoStorageState() {
       console.warn("메모 저장소를 불러오지 못했습니다.", error);
       Alert.alert("메모를 불러오지 못했어요", "앱을 다시 실행해 주세요. 기존 데이터를 보호하기 위해 저장을 중지했습니다.");
     });
-    return () => { active = false; };
-  }, []);
+    return () => { active = false; unsubscribe(); };
+  }, [applySnapshot]);
 
   useEffect(() => {
     if (!storageReady) return;
-    const snapshot: AppSnapshot = { folders, notes, draftText: draft.text, draftPhotos: draft.photos, noteFontSize, notePlaceholder, markdownEnabled, hyperlinksEnabled };
+    const snapshot: AppSnapshot = { folders, notes, draftText: draft.text, draftPhotos: draft.photos, noteFontSize, notePlaceholder, markdownEnabled, hyperlinksEnabled, syncTombstones };
     void persistence.save(snapshot);
-  }, [folders, notes, draft, noteFontSize, notePlaceholder, markdownEnabled, hyperlinksEnabled, storageReady, persistence]);
+  }, [folders, notes, syncTombstones, draft, noteFontSize, notePlaceholder, markdownEnabled, hyperlinksEnabled, storageReady, persistence]);
 
   useEffect(() => {
     if (!storageReady) return;

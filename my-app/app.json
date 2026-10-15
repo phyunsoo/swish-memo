@@ -1,14 +1,14 @@
 {
   "expo": {
-    "name": "swish 메모",
+    "name": "swish",
     "slug": "swish-memo",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/swish-icon.png",
     "scheme": "myapp",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon",
+      "icon": "./assets/images/swish-icon.png",
       "bundleIdentifier": "com.phyunsoo.swishmemo",
       "appleTeamId": "87A9TG46YC",
       "infoPlist": {
@@ -16,17 +16,12 @@
       }
     },
     "android": {
-      "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
-      },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "icon": "./assets/images/swish-icon.png"
     },
     "web": {
       "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/swish-icon.png"
     },
     "plugins": [
       "expo-router",

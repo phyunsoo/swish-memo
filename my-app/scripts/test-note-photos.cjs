@@ -53,41 +53,54 @@ async function main() {
       return disk;
     },
   };
+  const sync = load('lib/memo-sync.ts', {});
+  const coordinator = load('lib/memo-sync-coordinator.ts', {});
   const store = load('lib/local-store.ts', {
+    './memo-sync': sync, './memo-sync-coordinator': coordinator,
+    './memo-validation': load('lib/memo-validation.ts', {}),
+    './cloud-memo-client': { cloudMemoClient: { available: false } },
     'expo-sqlite': { openDatabaseAsync: async () => ({}) },
-    expo: { requireOptionalNativeModule: () => native },
+    expo: { requireOptionalNativeModule: (name) => name === 'MemoStore' ? native : null },
     'react-native': { Platform: { OS: 'ios' } },
     './note-typography': { normalizeNoteFontSize: (size) => size ?? 17, NOTE_TEXT_SIZE: { default: 17 } },
     './note-placeholder': { DEFAULT_NOTE_PLACEHOLDER: '' }, './note-photos': photos,
   });
+  let revision = Date.now();
+  async function persist(snapshot) {
+    const previous = await store.loadSnapshot();
+    const { notes, folders, syncTombstones } = previous;
+    let entities = sync.updateNotes({ notes, folders, syncTombstones }, snapshot.notes, ++revision, 'photos');
+    entities = sync.updateFolders(entities, snapshot.folders, revision, 'photos');
+    return store.saveSnapshot({ ...snapshot, ...entities });
+  }
   const legacy = await store.loadSnapshot();
   assert.deepEqual(legacy.draftPhotos, [], 'Old text-only snapshots stay compatible');
   const draft = { ...legacy, draftPhotos: [photo] };
-  await store.saveSnapshot(draft);
+  await persist(draft);
   assert.deepEqual((await store.loadSnapshot()).draftPhotos, [photo], 'Unfinished photos survive reload');
   const note = { id: 1, text: '', photos: [photo], state: 'draft', folderId: null, timestamp: 10 };
   const completed = { ...draft, draftText: '', draftPhotos: [], notes: [note] };
-  await store.saveSnapshot(completed);
+  await persist(completed);
   assert.ok(fs.existsSync(stored), 'Completing a photo-only memo keeps its file');
   const order = load('lib/note-order.ts', { './memo-rules': { newTodoGeneration: () => 'test' } });
   const saved = { ...completed, notes: order.moveNotesToDestination(completed.notes, [note], { state: 'saved', folderId: 'folder-1' }) };
-  await store.saveSnapshot(saved);
+  await persist(saved);
   assert.deepEqual(saved.notes[0].photos, [photo], 'Folder moves retain photos');
   const trash = { ...saved, notes: order.moveNotesToDestination(saved.notes, saved.notes, { state: 'trash', folderId: 'folder-1' }) };
-  await store.saveSnapshot(trash);
+  await persist(trash);
   assert.ok(fs.existsSync(stored), 'Trash keeps the photo file');
   const restored = { ...trash, notes: order.moveNotesToDestination(trash.notes, trash.notes, { state: 'saved', folderId: 'folder-1' }) };
-  await store.saveSnapshot(restored);
+  await persist(restored);
   assert.deepEqual((await store.loadSnapshot()).notes[0].photos, [photo], 'Restored photos survive reload');
   failSave = true;
-  await assert.rejects(store.saveSnapshot({ ...restored, notes: [] }));
+  await assert.rejects(persist({ ...restored, notes: [] }));
   assert.ok(fs.existsSync(stored), 'Failed saves must not delete referenced files');
   failSave = false;
-  await store.saveSnapshot({ ...restored, notes: [] });
+  await persist({ ...restored, notes: [] });
   assert.ok(!fs.existsSync(stored), 'Permanent deletion removes its photo');
   fs.writeFileSync(original, 'expiry photo');
   const [expiredPhoto] = photos.importNotePhotos([asset]);
-  await store.saveSnapshot({ ...legacy, notes: [{ ...note, photos: [expiredPhoto], state: 'trash', expired: true }] });
+  await persist({ ...legacy, notes: [{ ...note, photos: [expiredPhoto], state: 'trash', expired: true }] });
   assert.ok(!fs.existsSync(fileURLToPath(photos.notePhotoUri(expiredPhoto))), 'Native expiry removes the photo');
   console.log('Note photos: import, rollback, migration, draft reload, moves, trash, restore, failed saves and deletion passed');
 }

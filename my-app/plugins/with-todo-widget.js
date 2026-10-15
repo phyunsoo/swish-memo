@@ -12,6 +12,12 @@ module.exports = function withTodoWidget(config) {
     mod.modResults['com.apple.security.application-groups'] = [...new Set([
       ...(mod.modResults['com.apple.security.application-groups'] ?? []), group,
     ])];
+    mod.modResults['com.apple.developer.icloud-services'] = [...new Set([
+      ...(mod.modResults['com.apple.developer.icloud-services'] ?? []), 'CloudKit',
+    ])];
+    mod.modResults['com.apple.developer.icloud-container-identifiers'] = [...new Set([
+      ...(mod.modResults['com.apple.developer.icloud-container-identifiers'] ?? []), `iCloud.${bundleId}`,
+    ])];
     return mod;
   });
   config = withInfoPlist(config, (mod) => {

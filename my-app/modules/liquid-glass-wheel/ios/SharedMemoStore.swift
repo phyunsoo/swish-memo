@@ -148,6 +148,7 @@ final class SharedMemoStore {
       notes[index]["state"] = "trash"
       notes[index]["deletedAt"] = now
       notes[index]["sortOrder"] = order
+      notes[index]["modifiedAt"] = now
       snapshot["notes"] = notes
       _ = try write(snapshot)
       try execute("COMMIT")
