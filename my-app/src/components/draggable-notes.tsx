@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
-import { Keyboard, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { Keyboard, ScrollView, StyleSheet, Text, View, useWindowDimensions, type StyleProp, type ViewStyle } from "react-native";
 import { Gesture, GestureDetector, type NativeGesture } from "react-native-gesture-handler";
 import Animated, {
   cancelAnimation, Easing, LinearTransition, measure, ReduceMotion, scrollTo, useAnimatedRef, useAnimatedScrollHandler,
@@ -64,7 +64,7 @@ function updateReorderPosition(reorder: ReorderDrag) {
   reorder.target.set(reorderTargetIndex(reorder.layouts.get(), reorder.active.get(), reorder.from.get(), delta));
 }
 
-type DragState = {
+export type DragOverlayState = {
   active: SharedValue<number>;
   settling: SharedValue<boolean>;
   menu: QuickMenuState;
@@ -79,6 +79,7 @@ type DragState = {
   previewScaleX: SharedValue<number>;
   previewScaleY: SharedValue<number>;
 };
+type DragState = DragOverlayState;
 
 function selectionFeedback() {
   void Haptics.selectionAsync().catch(() => {});
@@ -118,10 +119,11 @@ function resetDragState(drag: DragState) {
   drag.menu.scrollOffset.set(0);
 }
 
-function DraggableRow({ note, drag, nativeScroll, rootRef, paddingTop, paddingBottom, folderCount, disabled, onDrop, children }: {
+function DraggableRow({ note, drag, nativeScroll, externalNativeScroll, rootRef, paddingTop, paddingBottom, folderCount, disabled, onDrop, children }: {
   note: Note;
   drag: DragState;
   nativeScroll: NativeGesture;
+  externalNativeScroll?: NativeGesture;
   rootRef: ReturnType<typeof useAnimatedRef<View>>;
   paddingTop: number;
   paddingBottom: number;
@@ -134,7 +136,7 @@ function DraggableRow({ note, drag, nativeScroll, rootRef, paddingTop, paddingBo
     .enabled(!disabled)
     .activateAfterLongPress(400)
     .maxPointers(1)
-    .blocksExternalGesture(nativeScroll)
+    .blocksExternalGesture(...(externalNativeScroll ? [nativeScroll, externalNativeScroll] : [nativeScroll]))
     .onStart((event) => {
       if (drag.active.get() !== -1) return;
       const root = measure(rootRef);
@@ -216,8 +218,8 @@ function DragPreview({ note, drag, isDark, noteFontSize }: { note: Note; drag: D
     width: drag.menu.layout.get().width,
     height: drag.menu.layout.get().previewHeight,
     transform: [
-      { translateX: drag.menu.layout.get().left },
-      { translateY: drag.menu.layout.get().previewTop },
+      { translateX: drag.rootX.get() + drag.menu.layout.get().left },
+      { translateY: drag.rootY.get() + drag.menu.layout.get().previewTop },
       { scaleX: drag.previewScaleX.get() },
       { scaleY: drag.previewScaleY.get() },
     ],
@@ -266,6 +268,23 @@ function ReorderRow({ noteId, index, reordering, reorder, onLayout, children }: 
       onLayout={(event) => onLayout(event.nativeEvent.layout.y, event.nativeEvent.layout.height)} style={style}>
       {children}
     </Animated.View>
+  );
+}
+
+export function DragOverlay({ drag, notes, folders, isDark, isTrashView, noteFontSize }: {
+  drag: DragOverlayState;
+  notes: Note[];
+  folders: Folder[];
+  isDark: boolean;
+  isTrashView: boolean;
+  noteFontSize: number;
+}) {
+  return (
+    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+      <FolderQuickMenu menu={drag.menu} originX={drag.rootX} originY={drag.rootY}
+        isDark={isDark} folders={folders} isTrashView={isTrashView} />
+      {notes.map((note) => <DragPreview key={note.id} note={note} drag={drag} isDark={isDark} noteFontSize={noteFontSize} />)}
+    </View>
   );
 }
 
@@ -340,12 +359,16 @@ function ReorderHandle({ noteId, nativeScroll, scrollRef, reorder, onDrop }: {
   );
 }
 
-export function DraggableNotes<T extends Note>({ notes, folders, renderNote, children, header, paddingTop, paddingBottom, isDark, isTrashView, editing, reordering = false, onDrop, onReorder, searchTarget, noteFontSize = NOTE_TEXT_SIZE.default, keyboardInset = 0 }: {
+export function DraggableNotes<T extends Note>({ notes, folders, renderNote, children, header, listStyle, detailNote, renderDetail, onDragState, paddingTop, paddingBottom, isDark, isTrashView, editing, reordering = false, onDrop, onReorder, searchTarget, noteFontSize = NOTE_TEXT_SIZE.default, keyboardInset = 0 }: {
   notes: T[];
   folders: Folder[];
   renderNote: (note: T, reorderHandle?: ReactNode) => ReactNode;
   children: ReactNode;
   header?: ReactNode;
+  listStyle?: StyleProp<ViewStyle>;
+  detailNote?: T | null;
+  renderDetail?: (nativeScroll: NativeGesture, wrapNote: (content: ReactNode) => ReactNode) => ReactNode;
+  onDragState?: (state: DragOverlayState | null) => void;
   paddingTop: number;
   paddingBottom: number;
   isDark: boolean;
@@ -405,6 +428,7 @@ export function DraggableNotes<T extends Note>({ notes, folders, renderNote, chi
   useEffect(() => { scrollToSearchTarget(); }, [scrollToSearchTarget]);
   const rootRef = useAnimatedRef<View>();
   const nativeScroll = useMemo(() => Gesture.Native(), []);
+  const detailNativeScroll = useMemo(() => Gesture.Native(), []);
   const menuOpacity = useSharedValue(0);
   const selected = useSharedValue(-1);
   const layout = useSharedValue(menuLayout(dimensions.width / 2, dimensions.height / 2,
@@ -433,9 +457,14 @@ export function DraggableNotes<T extends Note>({ notes, folders, renderNote, chi
       cardOpacity, previewOpacity, previewScaleX, previewScaleY],
   );
 
+  useEffect(() => {
+    onDragState?.(drag);
+    return () => onDragState?.(null);
+  }, [drag, onDragState]);
+
   useLayoutEffect(() => {
     resetDragState(drag);
-  }, [notes, folders, dimensions.width, dimensions.height, paddingTop, paddingBottom, drag]);
+  }, [notes, folders, detailNote, dimensions.width, dimensions.height, paddingTop, paddingBottom, drag]);
 
   useLayoutEffect(() => {
     resetReorderState(reorder);
@@ -481,8 +510,10 @@ export function DraggableNotes<T extends Note>({ notes, folders, renderNote, chi
 
   return (
     <Animated.View ref={rootRef} collapsable={false} style={[styles.container, { marginBottom: keyboardInset }]}>
-      <GestureDetector gesture={nativeScroll}>
-        <Animated.ScrollView ref={scrollRef} style={styles.container}
+      <View style={styles.workspace}>
+        <View style={[styles.listPane, listStyle]}>
+          <GestureDetector gesture={nativeScroll}>
+            <Animated.ScrollView ref={scrollRef} style={styles.container}
           contentInsetAdjustmentBehavior="never" keyboardShouldPersistTaps="handled"
           automaticallyAdjustKeyboardInsets={false}
           onScroll={onScroll} scrollEventThrottle={16}
@@ -512,16 +543,26 @@ export function DraggableNotes<T extends Note>({ notes, folders, renderNote, chi
           <View>
             {children}
           </View>
-        </Animated.ScrollView>
-      </GestureDetector>
-      <FolderQuickMenu menu={menu} isDark={isDark} folders={folders} isTrashView={isTrashView} />
-      {notes.map((note) => <DragPreview key={note.id} note={note} drag={drag} isDark={isDark} noteFontSize={noteFontSize} />)}
+            </Animated.ScrollView>
+          </GestureDetector>
+        </View>
+        {renderDetail && (() => {
+          const wrapNote = (content: ReactNode) => detailNote && !reordering
+            ? <DraggableRow note={detailNote} drag={drag} nativeScroll={nativeScroll} externalNativeScroll={detailNativeScroll}
+              rootRef={rootRef} paddingTop={paddingTop} paddingBottom={paddingBottom} folderCount={folders.length}
+              disabled={editing} onDrop={onDrop}>{content}</DraggableRow>
+            : content;
+          return renderDetail(detailNativeScroll, wrapNote);
+        })()}
+      </View>
     </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  workspace: { flex: 1, flexDirection: "row" },
+  listPane: { flex: 1, minWidth: 0 },
   preview: { position: "absolute", left: 0, top: 0,
     borderRadius: 18, borderWidth: StyleSheet.hairlineWidth, padding: 16, zIndex: 10,
     shadowColor: "#000000", shadowOpacity: 0.18, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: 12 },

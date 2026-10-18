@@ -77,6 +77,7 @@ export function NoteCard({ note, reorderHandle, isDark, editing, reordering, edi
           )}
           {!search.visible && !reordering && <GlassTextButton
             title={editing ? "완료" : "편집"}
+            textColor={isDark ? "#FFFFFF" : "#000000"}
             width={TEXT_BUTTON_WIDTH}
             height={BUTTON_HEIGHT}
             glassTint={colors.control}

@@ -38,8 +38,10 @@ function MenuRow({ title, symbol, index, menu, isDark, color, titleColor }: {
   );
 }
 
-export function FolderQuickMenu({ menu, folders, isDark, isTrashView }: {
+export function FolderQuickMenu({ menu, originX, originY, folders, isDark, isTrashView }: {
   menu: QuickMenuState;
+  originX: SharedValue<number>;
+  originY: SharedValue<number>;
   folders: Folder[];
   isDark: boolean;
   isTrashView: boolean;
@@ -49,8 +51,11 @@ export function FolderQuickMenu({ menu, folders, isDark, isTrashView }: {
   const panelStyle = useAnimatedStyle(() => ({
     width: menu.layout.get().width,
     height: menu.layout.get().height,
-    transform: [{ translateX: menu.layout.get().left }, { translateY: menu.layout.get().top }],
-  }));
+    transform: [
+      { translateX: originX.get() + menu.layout.get().left },
+      { translateY: originY.get() + menu.layout.get().top },
+    ],
+  }), [originX, originY, menu]);
   const viewportStyle = useAnimatedStyle(() => ({ height: menu.layout.get().listHeight + MENU_HINT_HEIGHT * 2 }));
   const rowsStyle = useAnimatedStyle(() => ({ top: MENU_HINT_HEIGHT, height: menu.layout.get().listHeight }));
   const contentStyle = useAnimatedStyle(() => ({ transform: [{ translateY: -menu.scrollOffset.get() }] }));

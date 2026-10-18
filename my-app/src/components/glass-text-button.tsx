@@ -12,12 +12,14 @@ export const TEXT_BUTTON_WIDTH = 72;
 
 export function GlassTextButton({
   title,
+  textColor = ACCENT,
   glassTint,
   onPress,
   width = TEXT_BUTTON_WIDTH,
   height = BUTTON_HEIGHT,
 }: {
   title: string;
+  textColor?: string;
   glassTint: string;
   onPress: () => void;
   width?: number;
@@ -60,7 +62,7 @@ export function GlassTextButton({
           ]}
           style={{ ...styles.doneNativeButton, width, height }}
         >
-          <Text textStyle={{ fontSize: 17, fontWeight: "600", color: ACCENT }}>
+          <Text textStyle={{ fontSize: 17, fontWeight: "600", color: textColor }}>
             {title}
           </Text>
         </Button>

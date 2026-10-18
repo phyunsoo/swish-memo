@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, type ReactNode } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { GestureDetector, type NativeGesture } from "react-native-gesture-handler";
 import type { StoredNote } from "@/lib/local-store";
 import type { SearchScrollTarget } from "@/lib/note-search";
 
-/** Compact previews keep the original long-press move and reorder gestures. */
+/** Card previews keep the original long-press move and reorder gestures. */
 export function NoteListRow({ note, text = note.text, selected, isDark, onSelect, reorderHandle }: {
   note: StoredNote;
   text?: string;
@@ -15,32 +16,33 @@ export function NoteListRow({ note, text = note.text, selected, isDark, onSelect
   const title = text.trim().split(/\r?\n/)[0] || (note.photos?.length ? "사진 메모" : "빈 메모");
   const preview = text.trim().split(/\r?\n/).slice(1).join(" ").trim();
   return (
-    <View style={[styles.row, {
-      backgroundColor: selected ? isDark ? "#493A19" : "#FFF0C9" : "transparent",
-      borderColor: selected ? isDark ? "#826323" : "#ECCC83" : "transparent",
+    <View style={[styles.card, {
+      backgroundColor: selected ? isDark ? "#493A19" : "#FFF0C9" : isDark ? "#242423" : "#FFFFFF",
+      borderColor: selected ? isDark ? "#826323" : "#ECCC83" : isDark ? "#3A3A3C" : "#E7E3DA",
     }]}>
       <Pressable accessibilityRole="button" accessibilityLabel={title}
         accessibilityState={{ selected }} onPress={onSelect}
-        style={({ pressed }) => [styles.rowButton, pressed && { opacity: 0.6 }]}>
-        <Text numberOfLines={1} style={[styles.title, { color: isDark ? "#F5F5F2" : "#171717" }]}>{title}</Text>
-        {!!preview && <Text numberOfLines={2} style={[styles.preview, { color: isDark ? "#A1A1A6" : "#747478" }]}>{preview}</Text>}
-        <Text numberOfLines={1} style={[styles.date, { color: isDark ? "#A1A1A6" : "#747478" }]}>
+        style={({ pressed }) => [styles.cardButton, pressed && { opacity: 0.6 }]}>
+        <Text numberOfLines={1} style={[styles.date, { color: isDark ? "#A1A1A6" : "#77777C" }]}>
           {new Date(note.timestamp).toLocaleDateString("ko-KR", { month: "short", day: "numeric" })}
           {!!note.photos?.length && ` · 사진 ${note.photos.length}장`}
         </Text>
+        <Text numberOfLines={1} style={[styles.title, { color: isDark ? "#F5F5F2" : "#171717" }]}>{title}</Text>
+        {!!preview && <Text numberOfLines={2} style={[styles.preview, { color: isDark ? "#A1A1A6" : "#747478" }]}>{preview}</Text>}
       </Pressable>
       {reorderHandle && <View style={styles.reorder}>{reorderHandle}</View>}
     </View>
   );
 }
 
-export function NoteDetailPane({ children, isDark, topInset, bottomInset, keyboardInset, searchTarget }: {
+export function NoteDetailPane({ children, isDark, topInset, bottomInset, keyboardInset, searchTarget, nativeScroll }: {
   children: ReactNode;
   isDark: boolean;
   topInset: number;
   bottomInset: number;
   keyboardInset: number;
   searchTarget: SearchScrollTarget | null;
+  nativeScroll: NativeGesture;
 }) {
   const scrollRef = useRef<ScrollView>(null);
   const scrollToMatch = useCallback(() => {
@@ -48,12 +50,14 @@ export function NoteDetailPane({ children, isDark, topInset, bottomInset, keyboa
   }, [searchTarget]);
   useEffect(scrollToMatch, [scrollToMatch]);
   return (
-    <ScrollView ref={scrollRef} style={[styles.detail, { marginBottom: keyboardInset }]}
-      keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets={false}
-      contentInsetAdjustmentBehavior="never" onContentSizeChange={scrollToMatch}
-      contentContainerStyle={{ flexGrow: 1, paddingTop: topInset, paddingBottom: bottomInset }}>
-      <View style={[styles.page, { backgroundColor: isDark ? "#111110" : "#FFFFFF" }]}>{children}</View>
-    </ScrollView>
+    <GestureDetector gesture={nativeScroll}>
+      <ScrollView ref={scrollRef} style={[styles.detail, { marginBottom: keyboardInset }]}
+        keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets={false}
+        contentInsetAdjustmentBehavior="never" onContentSizeChange={scrollToMatch}
+        contentContainerStyle={{ flexGrow: 1, paddingTop: topInset, paddingBottom: bottomInset }}>
+        <View style={[styles.page, { backgroundColor: isDark ? "#111110" : "#FFFFFF" }]}>{children}</View>
+      </ScrollView>
+    </GestureDetector>
   );
 }
 
@@ -65,12 +69,12 @@ export function EmptyNoteDetail({ isDark }: { isDark: boolean }) {
 }
 
 const styles = StyleSheet.create({
-  row: { marginHorizontal: 12, marginTop: 8, borderRadius: 12, borderWidth: 1, flexDirection: "row", alignItems: "center" },
-  rowButton: { flex: 1, minWidth: 0, minHeight: 88, paddingHorizontal: 14, paddingVertical: 14, gap: 6 },
+  card: { marginHorizontal: 14, marginTop: 10, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, flexDirection: "row", alignItems: "stretch" },
+  cardButton: { flex: 1, minWidth: 0, minHeight: 108, paddingHorizontal: 14, paddingVertical: 13, justifyContent: "center", gap: 6 },
   title: { fontSize: 16, fontWeight: "600", lineHeight: 22 },
   preview: { fontSize: 14, lineHeight: 20 },
   date: { fontSize: 12, lineHeight: 18, fontVariant: ["tabular-nums"] },
-  reorder: { width: 60, height: 60, alignItems: "center", justifyContent: "center" },
+  reorder: { width: 60, alignItems: "center", justifyContent: "center" },
   detail: { flex: 1, minWidth: 0 },
   page: { width: "100%", maxWidth: 820, alignSelf: "center", flex: 1, paddingHorizontal: 12 },
   empty: { flex: 1, minHeight: 260, justifyContent: "center", alignItems: "center", padding: 32, gap: 10 },

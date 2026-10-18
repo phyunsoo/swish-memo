@@ -23,7 +23,7 @@ import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-rou
 import { GestureDetector } from "react-native-gesture-handler";
 import { NoteSearch } from "@/components/note-search";
 import { useNoteSearch } from "@/hooks/use-note-search";
-import { DraggableNotes } from "@/components/draggable-notes";
+import { DraggableNotes, DragOverlay, type DragOverlayState } from "@/components/draggable-notes";
 import type { Folder, StoredNote } from "@/lib/local-store";
 import { useMemoStorage } from "@/hooks/use-memo-storage";
 import { FolderDrawer } from "@/components/folder-drawer";
@@ -70,11 +70,16 @@ export default function Index() {
   const [focusedNoteId, setFocusedNoteId] = useState<number | null>(null);
   const [activeView, setActiveView] = useState("home");
   const [reordering, setReordering] = useState(false);
+  const [dragOverlayState, setDragOverlayState] = useState<DragOverlayState | null>(null);
   const [iconEditingFolder, setIconEditingFolder] = useState<Folder | null>(null);
   const [selectedFolderIcon, setSelectedFolderIcon] = useState<FolderIcon>("folder");
   const [colorEditingFolder, setColorEditingFolder] = useState<Folder | null>(null);
   const [selectedFolderColor, setSelectedFolderColor] = useState<FolderColorId>(DEFAULT_FOLDER_COLOR);
   const [activeEditor, setActiveEditor] = useState<"new" | number | null>(null);
+  const [draftFocusRequest, setDraftFocusRequest] = useState(0);
+  useEffect(() => {
+    if (draftFocusRequest > 0) inputRef.current?.focus();
+  }, [draftFocusRequest]);
   useFocusEffect(useCallback(() => {
     if (view !== "todo") return;
     setActiveView("todo");
@@ -97,6 +102,7 @@ export default function Index() {
     ?? (activeView === "home" ? undefined : visibleNotes[0]);
   const isEditingCard = editingNoteId !== null;
   const hasContent = hasNoteContent(draft);
+  const showDraftSaveButton = !reordering && hasContent && (!wide || !selectedNote);
   const {
     visible: drawerVisible, width: drawerWidth, open: openDrawer, close: closeDrawer,
     panGesture: drawerPanGesture, contentStyle: appShiftStyle, panelStyle: drawerPanelStyle, scrimStyle,
@@ -291,7 +297,7 @@ export default function Index() {
       text: noteText,
       photos: notePhotos,
       timestamp: noteTimestamp ?? Date.now(),
-      sortOrder: nextNoteOrder(visibleNotes),
+      sortOrder: nextNoteOrder(notes.filter((item) => item.state === "draft")),
       folderId: null,
       state: "draft",
     };
@@ -348,13 +354,20 @@ export default function Index() {
   }, [resetSearch]);
 
   const selectView = (view: string) => {
-    if (!finishEditing()) return;
+    if (!finishEditing()) return false;
     closeSearch();
     setSelectedNoteId(null);
     setActiveView(view);
     setFocusedNoteId(null);
     closeDrawer();
     Keyboard.dismiss();
+    return true;
+  };
+
+  const startNewNote = () => {
+    if (storageStatus !== "ready" || !selectView("home")) return;
+    createNote();
+    setDraftFocusRequest((request) => request + 1);
   };
 
   const renderNoteCard = (note: Note, reorderHandle?: ReactNode) => (
@@ -501,13 +514,13 @@ export default function Index() {
               </View>
             )}
             <View pointerEvents="box-none" style={styles.toolbarActions}>
-              {wide && !reordering && <GlassButton label="새 메모" symbol="square.and.pencil"
-                tint={ACCENT} onPress={() => selectView("home")} />}
               {wide && canAttachPhotos && <GlassButton label="사진 첨부" symbol="paperclip"
-                tint={ACCENT} onPress={() => { void attachPhotos(); }} />}
-              {hasContent && (!wide || !selectedNote) && (
+                tint="#000000" onPress={() => { void attachPhotos(); }} />}
+              {showDraftSaveButton && (
                 <NativeCheckButton onPress={createNote} />
               )}
+              {!reordering && <GlassButton label="새 메모" symbol="square.and.pencil"
+                tint="#000000" onPress={startNewNote} />}
               {reordering ? (
                 <NativeCheckButton onPress={() => setReordering(false)} />
               ) : activeView === "home" ? (
@@ -541,10 +554,20 @@ export default function Index() {
         </View>}
 
         {storageStatus === "ready" ? <View style={[styles.notesBody, wide && { paddingTop: insets.top + BUTTON_HEIGHT + 24 }]}>
-          <View style={wide ? [styles.noteList, { borderRightColor: isDark ? "#343436" : "#E6E6E8", backgroundColor: isDark ? "#191918" : "#FAFAF8" }] : styles.appContent}>
           <DraggableNotes
           notes={visibleNotes}
           folders={folders}
+          listStyle={wide ? [styles.noteList, { borderRightColor: isDark ? "#343436" : "#E6E6E8", backgroundColor: isDark ? "#191918" : "#FAFAF8" }] : styles.appContent}
+          detailNote={wide ? selectedNote : null}
+          onDragState={setDragOverlayState}
+          renderDetail={wide ? (nativeScroll, wrapNote) => (
+            <NoteDetailPane key={selectedNote?.id ?? "new"} isDark={isDark} topInset={8}
+              bottomInset={Math.max(insets.bottom, 24) + bottomOverlayInset}
+              keyboardInset={keyboardHeight} nativeScroll={nativeScroll}
+              searchTarget={search.target?.noteId === selectedNote?.id ? search.target : null}>
+              {selectedNote ? wrapNote(renderNoteCard(selectedNote)) : activeView === "home" ? draftEditor : <EmptyNoteDetail isDark={isDark} />}
+            </NoteDetailPane>
+          ) : undefined}
           isDark={isDark}
           noteFontSize={noteFontSize}
           isTrashView={activeView === "trash"}
@@ -580,13 +603,6 @@ export default function Index() {
         >
           {!wide && activeView === "home" ? draftEditor : null}
         </DraggableNotes>
-          </View>
-          {wide && <NoteDetailPane key={selectedNote?.id ?? "new"} isDark={isDark} topInset={8}
-            bottomInset={Math.max(insets.bottom, 24) + bottomOverlayInset}
-            keyboardInset={keyboardHeight}
-            searchTarget={search.target?.noteId === selectedNote?.id ? search.target : null}>
-            {selectedNote ? renderNoteCard(selectedNote) : activeView === "home" ? draftEditor : <EmptyNoteDetail isDark={isDark} />}
-          </NoteDetailPane>}
         </View> : (
           <View style={styles.storageStatus}>
             <NativeText accessibilityRole="text" style={{ color: isDark ? "#A1A1A6" : "#77777C", textAlign: "center" }}>
@@ -608,6 +624,8 @@ export default function Index() {
         />}
 
         {!pinnedFolders && folderPanel}
+        {dragOverlayState && <DragOverlay drag={dragOverlayState} notes={visibleNotes} folders={folders}
+          isDark={isDark} isTrashView={activeView === "trash"} noteFontSize={noteFontSize} />}
         </View>
       </View>
       </GestureDetector>
