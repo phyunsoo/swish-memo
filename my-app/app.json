@@ -12,8 +12,15 @@
       "bundleIdentifier": "com.phyunsoo.swishmemo",
       "appleTeamId": "87A9TG46YC",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
-      }
+        "ITSAppUsesNonExemptEncryption": false,
+        "UISupportedInterfaceOrientations~ipad": [
+          "UIInterfaceOrientationPortrait",
+          "UIInterfaceOrientationPortraitUpsideDown",
+          "UIInterfaceOrientationLandscapeLeft",
+          "UIInterfaceOrientationLandscapeRight"
+        ]
+      },
+      "supportsTablet": true
     },
     "android": {
       "predictiveBackGestureEnabled": false,
@@ -28,9 +35,7 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 76
+          "backgroundColor": "#000000"
         }
       ],
       "expo-sqlite",

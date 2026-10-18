@@ -56,6 +56,8 @@ function DrawerRow({ title, symbol, count, selected, dark, width, onPress, inter
 
 type FolderDrawerProps = {
   visible: boolean;
+  persistent?: boolean;
+  bottomInset?: number;
   width: number;
   isDark: boolean;
   topInset: number;
@@ -72,6 +74,8 @@ type FolderDrawerProps = {
 
 export function FolderDrawer({
   visible,
+  persistent = false,
+  bottomInset = 0,
   width: drawerWidth,
   isDark,
   topInset,
@@ -86,12 +90,12 @@ export function FolderDrawer({
   onReorderFolders: reorderFolders,
 }: FolderDrawerProps) {
   const customFolders = useMemo(() => folders.filter((folder) => folder.kind === "custom"), [folders]);
-  if (!visible) return null;
+  if (!visible && !persistent) return null;
   return (
-    <View style={styles.drawerRoot} pointerEvents="box-none">
-      <Animated.View pointerEvents="none" style={[styles.drawerScrim, scrimStyle]} />
-      <Pressable style={[styles.drawerDismissArea, { left: drawerWidth }]} onPress={closeDrawer} accessibilityLabel="서랍 닫기" />
-      <Animated.View style={[styles.drawer, { width: drawerWidth, backgroundColor: FOLDER_ROW.panel[isDark ? "dark" : "light"], paddingTop: topInset + 16, paddingBottom: 0 }, drawerPanelStyle]}>
+    <View style={persistent ? [styles.sidebarRoot, { width: drawerWidth, borderRightColor: isDark ? "#343436" : "#DDDDDF" }] : styles.drawerRoot} pointerEvents="box-none">
+      {!persistent && <Animated.View pointerEvents="none" style={[styles.drawerScrim, scrimStyle]} />}
+      {!persistent && <Pressable style={[styles.drawerDismissArea, { left: drawerWidth }]} onPress={closeDrawer} accessibilityLabel="서랍 닫기" />}
+      <Animated.View style={[styles.drawer, { width: drawerWidth, backgroundColor: FOLDER_ROW.panel[isDark ? "dark" : "light"], paddingTop: topInset + 16, paddingBottom: bottomInset }, !persistent && drawerPanelStyle]}>
         <View style={styles.drawerHeader}>
           <NativeText style={[styles.drawerTitle, { color: isDark ? "#F5F5F2" : "#171717" }]}>폴더</NativeText>
           <Pressable style={styles.addFolderButton} onPress={createFolder} accessibilityRole="button">
@@ -114,6 +118,7 @@ export function FolderDrawer({
 }
 
 const styles = StyleSheet.create({
+  sidebarRoot: { height: "100%", borderRightWidth: StyleSheet.hairlineWidth },
   drawerRoot: { ...StyleSheet.absoluteFill, overflow: "hidden", zIndex: 10 },
   drawerScrim: { ...StyleSheet.absoluteFill, backgroundColor: "#000000" },
   drawerDismissArea: { ...StyleSheet.absoluteFill },

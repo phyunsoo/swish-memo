@@ -12,6 +12,8 @@ export default function SettingsRoute() {
   return <View style={{ flex: 1, backgroundColor }}>
     <Stack.Screen options={{ title: "설정", headerShown: false, contentStyle: { backgroundColor } }} />
     <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
+    <View style={{ flex: 1, width: "100%", maxWidth: 760, alignSelf: "center" }}>
     <SettingsScreen mode={mode} onModeChange={setMode} noteFontSize={noteFontSize} onNoteFontSizeChange={setNoteFontSize} notePlaceholder={notePlaceholder} onNotePlaceholderChange={setNotePlaceholder} markdownEnabled={markdownEnabled} onMarkdownEnabledChange={setMarkdownEnabled} hyperlinksEnabled={hyperlinksEnabled} onHyperlinksEnabledChange={setHyperlinksEnabled} onClose={() => router.back()} />
+    </View>
   </View>;
 }

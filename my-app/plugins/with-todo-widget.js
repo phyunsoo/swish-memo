@@ -63,7 +63,7 @@ module.exports = function withTodoWidget(config) {
         CODE_SIGN_ENTITLEMENTS: `"${TARGET}/${TARGET}.entitlements"`,
         IPHONEOS_DEPLOYMENT_TARGET: '17.0',
         SWIFT_VERSION: '5.0',
-        TARGETED_DEVICE_FAMILY: '1',
+        TARGETED_DEVICE_FAMILY: config.ios.supportsTablet ? '"1,2"' : '1',
         APPLICATION_EXTENSION_API_ONLY: 'YES',
         GENERATE_INFOPLIST_FILE: 'NO',
         CODE_SIGN_STYLE: 'Automatic',

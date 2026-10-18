@@ -19,7 +19,7 @@ export function GlassButton({
   onPress,
 }: {
   label: string;
-  symbol: "folder" | "ellipsis" | "circle" | "paperclip" | "keyboard.chevron.compact.down";
+  symbol: "square.and.pencil" | "folder" | "ellipsis" | "circle" | "paperclip" | "keyboard.chevron.compact.down";
   width?: number;
   tint?: string;
   glassTint?: string;
@@ -78,7 +78,7 @@ export function GlassButton({
             />
           ) : (
             <Text textStyle={{ fontSize: ICON_SIZE, color: tint }}>
-              {symbol === "ellipsis" ? "⋮" : symbol === "circle" ? "○" : symbol === "paperclip" ? "📎"
+              {symbol === "square.and.pencil" ? "✎" : symbol === "ellipsis" ? "⋮" : symbol === "circle" ? "○" : symbol === "paperclip" ? "📎"
                 : symbol === "keyboard.chevron.compact.down" ? "⌨⌄" : "📁"}
             </Text>
           )}

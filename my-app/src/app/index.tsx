@@ -7,7 +7,7 @@ import { resolvePhotoAttachmentTarget, usePhotoAttachment } from "@/hooks/use-ph
 import { NativeCheckButton } from "@/components/native-check-button";
 import { useNoteActions } from "@/hooks/use-note-actions";
 import { useKeyboardHeight } from "@/hooks/use-keyboard-height";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Alert,
   Keyboard,
@@ -17,6 +17,7 @@ import {
   Text as NativeText,
   TextInput as NativeTextInput,
   View,
+  useWindowDimensions,
 } from "react-native";
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { GestureDetector } from "react-native-gesture-handler";
@@ -36,6 +37,7 @@ import { HomeKebabMenu } from "@/components/home-kebab-menu";
 import { FolderKebabMenu } from "@/components/folder-kebab-menu";
 import { getNoteTextStyle, NOTE_TEXT_SIZE, NOTE_LINE_HEIGHT } from "@/lib/note-typography";
 import { useAppearance } from "@/lib/appearance";
+import { EmptyNoteDetail, NoteDetailPane, NoteListRow } from "@/components/wide-note-workspace";
 const ACCENT = "#E7A000";
 const BUTTON_HEIGHT = GLASS_BUTTON_SIZE;
 
@@ -43,6 +45,9 @@ type Note = StoredNote;
 
 export default function Index() {
   const insets = useSafeAreaInsets();
+  const { width: windowWidth } = useWindowDimensions();
+  const wide = windowWidth >= 840;
+  const pinnedFolders = windowWidth >= 1180;
   const keyboardHeight = useKeyboardHeight();
   const router = useRouter();
   const { view } = useLocalSearchParams<{ view?: string }>();
@@ -53,6 +58,7 @@ export default function Index() {
   const { completeTodo, reorderNotes } = useNoteActions();
   const noteTextStyle = getNoteTextStyle(noteFontSize);
   const { text: noteText, photos: notePhotos, timestamp: noteTimestamp } = draft;
+  const [selectedNoteId, setSelectedNoteId] = useState<number | null>(null);
   const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
   const [editingText, setEditingText] = useState("");
   const [editingTimestamp, setEditingTimestamp] = useState<number>(0);
@@ -63,6 +69,7 @@ export default function Index() {
   useFocusEffect(useCallback(() => {
     if (view !== "todo") return;
     setActiveView("todo");
+    setSelectedNoteId(null);
     setFocusedNoteId(null);
     setEditingNoteId(null);
     Keyboard.dismiss();
@@ -77,15 +84,21 @@ export default function Index() {
     : compareNoteOrder), [notes, activeView, focusedNoteId, folders]);
   const search = useNoteSearch(visibleNotes, editingNoteId, editingText);
   const { close: resetSearch } = search;
+  const selectedNote = visibleNotes.find((note) => note.id === (search.selectedMatch?.noteId ?? selectedNoteId ?? editingNoteId))
+    ?? (activeView === "home" ? undefined : visibleNotes[0]);
   const isEditingCard = editingNoteId !== null;
   const hasContent = hasNoteContent(draft);
   const {
     visible: drawerVisible, width: drawerWidth, open: openDrawer, close: closeDrawer,
     panGesture: drawerPanGesture, contentStyle: appShiftStyle, panelStyle: drawerPanelStyle, scrimStyle,
-  } = useFolderDrawer(!search.visible);
-  const attachmentEnabled = storageStatus === "ready" && !search.visible && !reordering && !drawerVisible;
+  } = useFolderDrawer(!search.visible && !wide);
+  useEffect(() => { if (wide) closeDrawer(); }, [wide, closeDrawer]);
+  const attachmentEnabled = storageStatus === "ready" && !search.visible && !reordering && (!drawerVisible || pinnedFolders)
+    && (!wide || !selectedNote || editingNoteId === selectedNote.id);
   const canDismissKeyboard = attachmentEnabled && (activeEditor === "new" ? activeView === "home"
     : activeEditor !== null && editingNoteId === activeEditor);
+  const bottomOverlayInset = (search.visible ? 160 : 0)
+    + (canDismissKeyboard && keyboardHeight > 0 ? EDITOR_KEYBOARD_TOOLBAR_INSET : 0);
   const attachmentTarget = resolvePhotoAttachmentTarget(editingNoteId, activeView, notes);
   const { attachPhotos, isPickingPhotos } = usePhotoAttachment({
     target: attachmentTarget,
@@ -271,7 +284,7 @@ export default function Index() {
       const currentNote = notes.find((note) => note.id === editingNoteId);
       if (currentNote?.folderId === "todo" && !isValidTodoText(editingText)) {
         Alert.alert("투두 형식을 확인해 주세요", "투두는 줄바꿈 없이 30자 이내로 작성해야 합니다.");
-        return;
+        return false;
       }
       saveEditingNote();
       setEditingNoteId(null);
@@ -279,6 +292,7 @@ export default function Index() {
     inputRef.current?.blur();
     editInputRef.current?.blur();
     Keyboard.dismiss();
+    return true;
   };
 
   const resumeEditing = (note: Note) => {
@@ -286,6 +300,7 @@ export default function Index() {
     if (editingNoteId !== null) {
       saveEditingNote();
     }
+    setSelectedNoteId(note.id);
     setEditingNoteId(note.id);
     setEditingText(note.text);
     setEditingTimestamp(note.timestamp);
@@ -308,15 +323,115 @@ export default function Index() {
   }, [resetSearch]);
 
   const selectView = (view: string) => {
-    if (editingNoteId !== null) {
-      saveEditingNote();
-      setEditingNoteId(null);
-    }
+    if (!finishEditing()) return;
+    closeSearch();
+    setSelectedNoteId(null);
     setActiveView(view);
     setFocusedNoteId(null);
     closeDrawer();
     Keyboard.dismiss();
   };
+
+  const renderNoteCard = (note: Note, reorderHandle?: ReactNode) => (
+    <NoteCard
+      note={note}
+      reorderHandle={reorderHandle}
+      isDark={isDark}
+      editing={editingNoteId === note.id}
+      reordering={reordering}
+      editingText={editingText}
+      editInputRef={editInputRef}
+      noteFontSize={noteFontSize}
+      markdownEnabled={markdownEnabled}
+      hyperlinksEnabled={hyperlinksEnabled}
+      search={search}
+      onComplete={() => {
+        completeTodo(note.id);
+        setFocusedNoteId(null);
+      }}
+      onEdit={() => editingNoteId === note.id ? finishEditing() : resumeEditing(note)}
+      onChangeText={(text) => {
+        setEditingText(text);
+        setEditingTimestamp(Date.now());
+      }}
+      onInputFocus={() => setActiveEditor(note.id)}
+      onRemovePhoto={(photo) => removePhoto(note.id, photo)}
+    />
+  );
+
+  const draftEditor = (
+    <View style={[styles.editorCard, styles.editingCard]}>
+      <NativeTextInput
+        ref={inputRef}
+        accessibilityLabel="새 메모 내용"
+        editable={!search.visible}
+        accessibilityHint="떠오른 생각을 자유롭게 입력하세요"
+        autoFocus={!wide}
+        multiline
+        onChangeText={changeDraftText}
+        onFocus={() => {
+          if (editingNoteId !== null) {
+            saveEditingNote();
+            setEditingNoteId(null);
+          }
+          setActiveEditor("new");
+        }}
+        value={noteText}
+        scrollEnabled={false}
+        selectionColor={ACCENT}
+        style={[styles.editorInput, styles.newNoteInput, notePhotos.length > 0 && { minHeight: 44 },
+          noteTextStyle, { color: isDark ? "#F5F5F2" : "#171717" }]}
+      />
+      {noteText.length === 0 && notePhotos.length === 0 && (
+        <View pointerEvents="none" style={styles.newNotePlaceholderWrap}>
+          <NativeText style={[styles.editorInput, noteTextStyle, { color: isDark ? "#747474" : "#A0A0A0" }]}>
+            {notePlaceholder}
+          </NativeText>
+        </View>
+      )}
+      <NotePhotos photos={notePhotos} onRemove={(photo) => removePhoto("new", photo)} />
+    </View>
+  );
+
+  const folderPanel = (
+    <FolderDrawer
+      visible={drawerVisible}
+      persistent={pinnedFolders}
+      bottomInset={insets.bottom}
+      width={pinnedFolders ? 260 : drawerWidth}
+      isDark={isDark}
+      topInset={insets.top}
+      notes={notes}
+      folders={folders}
+      activeView={activeView}
+      panelStyle={drawerPanelStyle}
+      scrimStyle={scrimStyle}
+      onClose={closeDrawer}
+      onSelectView={selectView}
+      onCreateFolder={createFolder}
+      onReorderFolders={(ids) => setFolders((current) => {
+        const custom = new Map(current.filter((folder) => folder.kind === "custom").map((folder) => [folder.id, folder]));
+        const ordered = ids.flatMap((id) => {
+          const folder = custom.get(id);
+          custom.delete(id);
+          return folder ? [folder] : [];
+        });
+        ordered.push(...custom.values());
+        let index = 0;
+        return current.map((folder) => folder.kind === "custom" ? ordered[index++] : folder);
+      })}
+    />
+  );
+
+  if (storageStatus === "loading") {
+    return (
+      <>
+        <Stack.Screen options={{ headerShown: false }} />
+        <StatusBar hidden />
+        <View style={{ flex: 1, backgroundColor: "#000000" }} />
+      </>
+    );
+  }
 
   return (
     <>
@@ -324,13 +439,15 @@ export default function Index() {
       <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
       <GestureDetector gesture={drawerPanGesture}>
       <View style={[styles.screen, { backgroundColor: isDark ? "#111110" : "#FFFFFF" }]}>
-        <Animated.View style={[styles.appContent, appShiftStyle]}>
+        {pinnedFolders && folderPanel}
+        <View style={styles.workspace}>
+        <Animated.View style={[styles.appContent, !wide && appShiftStyle]}>
         <View style={styles.appContent}>
         {!search.visible && <View
           pointerEvents="box-none"
           style={[
             styles.toolbarOverlay,
-            activeView === "home"
+            activeView === "home" && !wide
               ? { top: insets.top + 12 }
               : {
                   top: 0,
@@ -344,22 +461,26 @@ export default function Index() {
           ]}
         >
           <View pointerEvents="box-none" style={styles.toolbar}>
-            <GlassButton
+            {!pinnedFolders && <GlassButton
               label="폴더 메뉴"
               symbol="folder"
               tint={isDark ? "#F5F5F2" : "#171717"}
               glassTint={isDark ? "#343438" : "#F2F2F5"}
               onPress={openDrawer}
-            />
-            {activeView !== "home" && (
-              <View pointerEvents="none" style={styles.toolbarTitleWrap}>
+            />}
+            {(activeView !== "home" || wide) && (
+              <View pointerEvents="none" style={wide ? styles.wideToolbarTitle : styles.toolbarTitleWrap}>
                 <NativeText numberOfLines={1} style={[styles.toolbarTitle, { color: isDark ? "#F5F5F2" : "#171717" }]}>
                   {viewTitle}
                 </NativeText>
               </View>
             )}
             <View pointerEvents="box-none" style={styles.toolbarActions}>
-              {hasContent && (
+              {wide && !reordering && <GlassButton label="새 메모" symbol="square.and.pencil"
+                tint={ACCENT} onPress={() => selectView("home")} />}
+              {wide && canAttachPhotos && <GlassButton label="사진 첨부" symbol="paperclip"
+                tint={ACCENT} onPress={() => { void attachPhotos(); }} />}
+              {hasContent && (!wide || !selectedNote) && (
                 <NativeCheckButton onPress={createNote} />
               )}
               {reordering ? (
@@ -384,7 +505,9 @@ export default function Index() {
           </View>
         </View>}
 
-        {storageStatus === "ready" ? <DraggableNotes
+        {storageStatus === "ready" ? <View style={[styles.notesBody, wide && { paddingTop: insets.top + BUTTON_HEIGHT + 24 }]}>
+          <View style={wide ? [styles.noteList, { borderRightColor: isDark ? "#343436" : "#E6E6E8", backgroundColor: isDark ? "#191918" : "#FAFAF8" }] : styles.appContent}>
+          <DraggableNotes
           notes={visibleNotes}
           folders={folders}
           isDark={isDark}
@@ -392,83 +515,47 @@ export default function Index() {
           isTrashView={activeView === "trash"}
           editing={isEditingCard || search.visible}
           reordering={reordering}
-          keyboardInset={keyboardHeight > 0 ? keyboardHeight + (canDismissKeyboard ? EDITOR_KEYBOARD_TOOLBAR_INSET : 0) : 0}
-          searchTarget={search.target}
+          keyboardInset={keyboardHeight}
+          searchTarget={wide && search.selectedMatch ? { noteId: search.selectedMatch.noteId, offset: 0, key: `${search.query}:${search.activeIndex}` } : search.target}
           onDrop={onDrop}
           onReorder={(ids) => reorderNotes(ids, activeView)}
-          paddingTop={activeView === "home"
+          paddingTop={wide ? 12 : activeView === "home"
             ? insets.top + 12 + BUTTON_HEIGHT
             : insets.top + BUTTON_HEIGHT}
-          paddingBottom={Math.max(insets.bottom, 18) + (search.visible ? 160 : 0)}
-          header={activeView !== "home" ? (
+          paddingBottom={Math.max(insets.bottom, 18) + bottomOverlayInset}
+          header={wide ? (
+            <View style={styles.listHeading}>
+              <NativeText style={{ fontSize: 13, color: isDark ? "#A1A1A6" : "#77777C" }}>{visibleNotes.length}개의 메모</NativeText>
+              {visibleNotes.length === 0 && <NativeText style={{ color: isDark ? "#A1A1A6" : "#77777C" }}>아직 메모가 없습니다.</NativeText>}
+            </View>
+          ) : activeView !== "home" ? (
             <View style={[styles.viewHeading, visibleNotes.length === 0 && styles.emptyViewHeading]}>
               {visibleNotes.length === 0 && <NativeText style={{ color: isDark ? "#A1A1A6" : "#77777C" }}>메모가 없습니다.</NativeText>}
             </View>
           ) : null}
-          renderNote={(note, reorderHandle) => (
-            <NoteCard
-              note={note}
-              reorderHandle={reorderHandle}
-              isDark={isDark}
-              editing={editingNoteId === note.id}
-              reordering={reordering}
-              editingText={editingText}
-              editInputRef={editInputRef}
-              noteFontSize={noteFontSize}
-              markdownEnabled={markdownEnabled}
-              hyperlinksEnabled={hyperlinksEnabled}
-              search={search}
-              onComplete={() => {
-                completeTodo(note.id);
-                setFocusedNoteId(null);
-              }}
-              onEdit={() => editingNoteId === note.id ? finishEditing() : resumeEditing(note)}
-              onChangeText={(text) => {
-                setEditingText(text);
-                setEditingTimestamp(Date.now());
-              }}
-              onInputFocus={() => setActiveEditor(note.id)}
-              onRemovePhoto={(photo) => removePhoto(note.id, photo)}
-            />
-          )}
+          renderNote={(note, reorderHandle) => wide ? (
+            <NoteListRow note={note} text={editingNoteId === note.id ? editingText : note.text}
+              selected={selectedNote?.id === note.id} isDark={isDark} reorderHandle={reorderHandle}
+              onSelect={() => {
+                if (search.visible || reordering || selectedNote?.id === note.id) return;
+                if (!finishEditing()) return;
+                setSelectedNoteId(note.id);
+              }} />
+          ) : renderNoteCard(note, reorderHandle)}
         >
-          {activeView === "home" ? (
-            <View style={[styles.editorCard, styles.editingCard]}>
-              <NativeTextInput
-                ref={inputRef}
-                accessibilityLabel="새 메모 내용"
-                editable={!search.visible}
-                accessibilityHint="떠오른 생각을 자유롭게 입력하세요"
-                autoFocus
-                multiline
-                onChangeText={changeDraftText}
-                onFocus={() => {
-                  if (editingNoteId !== null) {
-                    saveEditingNote();
-                    setEditingNoteId(null);
-                  }
-                  setActiveEditor("new");
-                }}
-                value={noteText}
-                scrollEnabled={false}
-                selectionColor={ACCENT}
-                style={[styles.editorInput, styles.newNoteInput, notePhotos.length > 0 && { minHeight: 44 },
-                  noteTextStyle, { color: isDark ? "#F5F5F2" : "#171717" }]}
-              />
-              {noteText.length === 0 && notePhotos.length === 0 && (
-                <View pointerEvents="none" style={styles.newNotePlaceholderWrap}>
-                  <NativeText style={[styles.editorInput, noteTextStyle, { color: isDark ? "#747474" : "#A0A0A0" }]}>
-                    {notePlaceholder}
-                  </NativeText>
-                </View>
-              )}
-              <NotePhotos photos={notePhotos} onRemove={(photo) => removePhoto("new", photo)} />
-            </View>
-          ) : null}
-        </DraggableNotes> : (
+          {!wide && activeView === "home" ? draftEditor : null}
+        </DraggableNotes>
+          </View>
+          {wide && <NoteDetailPane key={selectedNote?.id ?? "new"} isDark={isDark} topInset={8}
+            bottomInset={Math.max(insets.bottom, 24) + bottomOverlayInset}
+            keyboardInset={keyboardHeight}
+            searchTarget={search.target?.noteId === selectedNote?.id ? search.target : null}>
+            {selectedNote ? renderNoteCard(selectedNote) : activeView === "home" ? draftEditor : <EmptyNoteDetail isDark={isDark} />}
+          </NoteDetailPane>}
+        </View> : (
           <View style={styles.storageStatus}>
             <NativeText accessibilityRole="text" style={{ color: isDark ? "#A1A1A6" : "#77777C", textAlign: "center" }}>
-              {storageStatus === "loading" ? "메모를 불러오는 중…" : "메모를 불러오지 못했어요. 앱을 다시 실행해 주세요."}
+              메모를 불러오지 못했어요. 앱을 다시 실행해 주세요.
             </NativeText>
           </View>
         )}
@@ -485,31 +572,8 @@ export default function Index() {
           onClose={closeSearch}
         />}
 
-        <FolderDrawer
-          visible={drawerVisible}
-          width={drawerWidth}
-          isDark={isDark}
-          topInset={insets.top}
-          notes={notes}
-          folders={folders}
-          activeView={activeView}
-          panelStyle={drawerPanelStyle}
-          scrimStyle={scrimStyle}
-          onClose={closeDrawer}
-          onSelectView={selectView}
-          onCreateFolder={createFolder}
-          onReorderFolders={(ids) => setFolders((current) => {
-            const custom = new Map(current.filter((folder) => folder.kind === "custom").map((folder) => [folder.id, folder]));
-            const ordered = ids.flatMap((id) => {
-              const folder = custom.get(id);
-              custom.delete(id);
-              return folder ? [folder] : [];
-            });
-            ordered.push(...custom.values());
-            let index = 0;
-            return current.map((folder) => folder.kind === "custom" ? ordered[index++] : folder);
-          })}
-        />
+        {!pinnedFolders && folderPanel}
+        </View>
       </View>
       </GestureDetector>
     </>
@@ -518,9 +582,12 @@ export default function Index() {
 
 const styles = StyleSheet.create({
   storageStatus: { flex: 1, justifyContent: "center", alignItems: "center", paddingHorizontal: 26 },
-  screen: {
-    flex: 1,
-  },
+  screen: { flex: 1, flexDirection: "row" },
+  workspace: { flex: 1, minWidth: 0 },
+  notesBody: { flex: 1, flexDirection: "row" },
+  noteList: { width: 300, borderRightWidth: StyleSheet.hairlineWidth },
+  listHeading: { paddingHorizontal: 26, paddingVertical: 12, gap: 20 },
+  wideToolbarTitle: { flex: 1, minWidth: 0, alignItems: "flex-start", paddingHorizontal: 20 },
   toolbarOverlay: {
     position: "absolute",
     left: 0,

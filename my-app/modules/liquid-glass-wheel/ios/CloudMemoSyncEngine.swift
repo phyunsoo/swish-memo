@@ -3,7 +3,11 @@ import Foundation
 
 // Cloud transport stays independent of Expo and the local SQLite store.
 actor CloudMemoSyncEngine {
-  private let container = CKContainer(identifier: "iCloud.com.phyunsoo.swishmemo")
+  #if targetEnvironment(simulator)
+  private let container: CKContainer? = nil
+  #else
+  private let container: CKContainer? = CKContainer(identifier: "iCloud.com.phyunsoo.swishmemo")
+  #endif
   private let photoStore = CloudMemoPhotoStore()
   private var lastSyncStatus = "notStarted"
   private let notesType = "SwishMemoNote"
@@ -11,6 +15,10 @@ actor CloudMemoSyncEngine {
   private let tombstonesType = "SwishMemoTombstone"
 
   func getStatus() async -> [String: String] {
+    guard let container else {
+      return ["status": "unavailable", "syncStatus": lastSyncStatus]
+    }
+
     do {
       let status: String
       switch try await container.accountStatus() {
@@ -28,6 +36,14 @@ actor CloudMemoSyncEngine {
   }
 
   func syncSnapshot(_ json: String) async throws -> String {
+    guard container != nil else {
+      throw NSError(
+        domain: "CloudMemoSync",
+        code: 1,
+        userInfo: [NSLocalizedDescriptionKey: "iCloud sync is unavailable in the iOS Simulator."]
+      )
+    }
+
     do {
       let result = try await sync(json)
       lastSyncStatus = "synced"
@@ -51,6 +67,14 @@ actor CloudMemoSyncEngine {
   }
 
   private func sync(_ json: String) async throws -> String {
+    guard let container else {
+      throw NSError(
+        domain: "CloudMemoSync",
+        code: 1,
+        userInfo: [NSLocalizedDescriptionKey: "iCloud sync is unavailable in the iOS Simulator."]
+      )
+    }
+
     let database = container.privateCloudDatabase
     let local = try CloudMemoPayload.snapshot(json)
     var notes = local["notes"] as? [[String: Any]] ?? []
