@@ -4,29 +4,35 @@ import Animated from "react-native-reanimated";
 import { Host } from "@expo/ui";
 import { Button as SwiftUIButton, HStack as SwiftHStack, Image as SwiftUIImage, Spacer as SwiftSpacer, Text as SwiftUIText } from "@expo/ui/swift-ui";
 import { background, buttonStyle, contentShape, font, foregroundStyle, frame, padding, shapes } from "@expo/ui/swift-ui/modifiers";
+import { SymbolView, type SFSymbol } from "expo-symbols";
 import type { Folder, StoredNote } from "@/lib/local-store";
+import { folderSymbol } from "@/lib/folder-icons";
+import { folderColorFor, folderIconTint } from "@/lib/folder-colors";
 
 import { FOLDER_ROW } from "./folder-row-appearance";
 import { SortableFolders } from "./sortable-folders";
 
 const ACCENT = FOLDER_ROW.accent;
 
-function DrawerRow({ title, symbol, count, selected, dark, width, onPress, interactive = true }: {
+function DrawerRow({ title, symbol, count, selected, dark, folderIconColor, folderNameColor, width, onPress, interactive = true }: {
   title: string;
-  symbol: "square.and.pencil" | "checklist" | "trash" | "folder";
+  symbol: SFSymbol;
   count: number;
   selected: boolean;
   dark: boolean;
+  folderIconColor?: string;
+  folderNameColor?: string;
   width: number;
   onPress: () => void;
   interactive?: boolean;
 }) {
-  const iconColor = symbol === "trash" ? FOLDER_ROW.trash : ACCENT;
-  const labelColor = FOLDER_ROW.text[dark ? "dark" : "light"];
+  const iconColor = folderIconColor ?? (symbol === "trash" ? FOLDER_ROW.trash : ACCENT);
+  const labelColor = folderNameColor ?? FOLDER_ROW.text[dark ? "dark" : "light"];
   const selectionColor = selected ? FOLDER_ROW.selection[dark ? "dark" : "light"] : "clear";
   if (Platform.OS !== "ios") {
     return (
       <Pressable onPress={interactive ? onPress : undefined} style={[styles.drawerRow, { width }, selected && { backgroundColor: FOLDER_ROW.selection[dark ? "dark" : "light"] }]}>
+        <SymbolView name={folderSymbol(symbol)} size={FOLDER_ROW.iconSize} tintColor={iconColor} />
         <NativeText style={[styles.drawerRowTitle, { color: labelColor }]}>{title}</NativeText>
         {count > 0 && <NativeText style={styles.drawerCount}>{count}</NativeText>}
       </Pressable>
@@ -105,10 +111,10 @@ export function FolderDrawer({
         <SortableFolders folders={customFolders} width={drawerWidth - 36} dark={isDark}
           onSelect={selectView} onReorder={reorderFolders}
           renderFolder={(folder) => (
-            <DrawerRow title={folder.name} symbol="folder" count={notes.filter((n) => n.state === "saved" && n.folderId === folder.id).length} selected={activeView === folder.id} dark={isDark} width={drawerWidth - 36} interactive={false} onPress={() => selectView(folder.id)} />
+            <DrawerRow title={folder.name} symbol={folder.icon ?? "folder"} count={notes.filter((n) => n.state === "saved" && n.folderId === folder.id).length} selected={activeView === folder.id} dark={isDark} folderIconColor={folderIconTint(folder.color, isDark)} folderNameColor={folderColorFor(folder.color, isDark)} width={drawerWidth - 36} interactive={false} onPress={() => selectView(folder.id)} />
           )}>
           <DrawerRow title="작성 화면" symbol="square.and.pencil" count={notes.filter((n) => n.state === "draft").length} selected={activeView === "home"} dark={isDark} width={drawerWidth - 36} onPress={() => selectView("home")} />
-          <DrawerRow title="투두리스트" symbol="checklist" count={notes.filter((n) => n.state === "saved" && n.folderId === "todo").length} selected={activeView === "todo"} dark={isDark} width={drawerWidth - 36} onPress={() => selectView("todo")} />
+          <DrawerRow title="투두리스트" symbol="checklist" count={notes.filter((n) => n.state === "saved" && n.folderId === "todo").length} selected={activeView === "todo"} dark={isDark} folderIconColor={FOLDER_ROW.todoIcon[isDark ? "dark" : "light"]} width={drawerWidth - 36} onPress={() => selectView("todo")} />
           <DrawerRow title="휴지통" symbol="trash" count={notes.filter((n) => n.state === "trash").length} selected={activeView === "trash"} dark={isDark} width={drawerWidth - 36} onPress={() => selectView("trash")} />
           <View style={styles.drawerDivider} />
         </SortableFolders>

@@ -1,9 +1,13 @@
 import type { NotePhoto } from "./note-photos";
+import type { SFSymbol } from "expo-symbols";
+import type { FolderColorId } from "./folder-colors";
 
 export type Folder = {
   id: string;
   name: string;
   kind: "todo" | "custom";
+  icon?: SFSymbol;
+  color?: FolderColorId;
   createdAt: number;
   noteOrder?: "recent" | "manual";
   modifiedAt?: number;

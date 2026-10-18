@@ -1,4 +1,5 @@
 import type { AppSnapshot } from "./memo-model";
+import { isFolderColorId } from "./folder-colors";
 
 function fail(path: string): never { throw new Error(`Invalid memo data: ${path}`); }
 function object(value: unknown, path: string): Record<string, unknown> {
@@ -55,6 +56,8 @@ export function parseMemoSnapshot(json: string): Partial<AppSnapshot> {
     string(folder.name, `${path}.name`);
     number(folder.createdAt, `${path}.createdAt`);
     if (!["todo", "custom"].includes(folder.kind as string)) fail(`${path}.kind`);
+    optional(folder.icon, `${path}.icon`, string);
+    optional(folder.color, `${path}.color`, (color, colorPath) => { if (!isFolderColorId(color)) fail(colorPath); });
     if (folder.noteOrder !== undefined && !["recent", "manual"].includes(folder.noteOrder as string)) fail(`${path}.noteOrder`);
     metadata(folder, path);
   });

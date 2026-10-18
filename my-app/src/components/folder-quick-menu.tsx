@@ -1,7 +1,9 @@
 import { StyleSheet, Text, View } from "react-native";
-import { SymbolView } from "expo-symbols";
+import { SymbolView, type SFSymbol } from "expo-symbols";
 import Animated, { useAnimatedStyle, type SharedValue } from "react-native-reanimated";
 import type { Folder } from "@/lib/local-store";
+import { folderSymbol } from "@/lib/folder-icons";
+import { folderColorFor, folderIconTint } from "@/lib/folder-colors";
 import { FOLDER_ROW } from "./folder-row-appearance";
 import { MENU_PADDING, MENU_DIVIDER, MENU_HINT_HEIGHT, menuContentHeight, menuMaxScrollOffset, type MenuLayout } from "./quick-menu-geometry";
 
@@ -12,22 +14,26 @@ export type QuickMenuState = {
   scrollOffset: SharedValue<number>;
 };
 
-function MenuRow({ title, symbol, index, menu, isDark }: {
+function MenuRow({ title, symbol, index, menu, isDark, color, titleColor }: {
   title: string;
-  symbol: "checklist" | "folder" | "trash";
+  symbol: SFSymbol;
   index: number;
   menu: QuickMenuState;
   isDark: boolean;
+  color?: string;
+  titleColor?: string;
 }) {
+  const tint = color ?? (symbol === "trash" ? FOLDER_ROW.trash : FOLDER_ROW.accent);
+  const labelColor = titleColor ?? FOLDER_ROW.text[isDark ? "dark" : "light"];
   const selectionStyle = useAnimatedStyle(() => ({
     backgroundColor: menu.selected.get() === index
       ? FOLDER_ROW.selection[isDark ? "dark" : "light"] : "transparent",
   }));
   return (
     <Animated.View style={[styles.row, selectionStyle]}>
-      <SymbolView name={symbol} size={FOLDER_ROW.iconSize}
-        tintColor={symbol === "trash" ? FOLDER_ROW.trash : FOLDER_ROW.accent} />
-      <Text numberOfLines={1} style={[styles.title, { color: FOLDER_ROW.text[isDark ? "dark" : "light"] }]}>{title}</Text>
+      <SymbolView name={folderSymbol(symbol)} size={FOLDER_ROW.iconSize}
+        tintColor={tint} />
+      <Text numberOfLines={1} style={[styles.title, { color: labelColor }]}>{title}</Text>
     </Animated.View>
   );
 }
@@ -61,7 +67,9 @@ export function FolderQuickMenu({ menu, folders, isDark, isTrashView }: {
           <Animated.View style={[styles.rowViewport, rowsStyle]}>
             <Animated.View style={[styles.rows, { height: menuContentHeight(folders.length) }, contentStyle]}>
               {folders.map((folder, index) => <MenuRow key={folder.id} title={folder.name}
-                symbol={folder.kind === "todo" ? "checklist" : "folder"} index={index} menu={menu} isDark={isDark} />)}
+                symbol={folder.kind === "todo" ? "checklist" : folder.icon ?? "folder"} index={index} menu={menu} isDark={isDark}
+                color={folder.kind === "todo" ? FOLDER_ROW.todoIcon[appearance] : folderIconTint(folder.color, isDark)}
+                titleColor={folder.kind === "custom" ? folderColorFor(folder.color, isDark) : undefined} />)}
             </Animated.View>
           </Animated.View>
           <Animated.View style={[styles.hint, { top: 0, backgroundColor: FOLDER_ROW.panel[appearance] }, topHint]}>

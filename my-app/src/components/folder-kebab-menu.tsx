@@ -8,6 +8,8 @@ export type FolderKebabMenuProps = {
   onEmptyTrash: () => void;
   showEmptyTrash: boolean;
   onRequestRenameFolder: () => void;
+  onRequestEditFolderColor: () => void;
+  onRequestEditFolderIcon: () => void;
   onDeleteFolder: () => void;
   showFolderActions: boolean;
   isDark: boolean;

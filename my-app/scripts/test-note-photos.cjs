@@ -57,7 +57,7 @@ async function main() {
   const coordinator = load('lib/memo-sync-coordinator.ts', {});
   const store = load('lib/local-store.ts', {
     './memo-sync': sync, './memo-sync-coordinator': coordinator,
-    './memo-validation': load('lib/memo-validation.ts', {}),
+    './memo-validation': load('lib/memo-validation.ts', { './folder-colors': load('lib/folder-colors.ts', {}) }),
     './cloud-memo-client': { cloudMemoClient: { available: false } },
     'expo-sqlite': { openDatabaseAsync: async () => ({}) },
     expo: { requireOptionalNativeModule: (name) => name === 'MemoStore' ? native : null },

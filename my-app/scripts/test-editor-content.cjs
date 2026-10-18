@@ -31,7 +31,7 @@ assert.deepEqual(emptyNoteDraft(), { text: '', photos: [] }, 'Reset clears all d
 
 const { homeMenuActions, folderMenuActions } = load('lib/kebab-menu-actions.ts');
 let selected;
-const props = Object.fromEntries(['Settings', 'Search', 'Reorder', 'AttachPhotos', 'Delete', 'EmptyTrash', 'RequestRenameFolder', 'DeleteFolder']
+const props = Object.fromEntries(['Settings', 'Search', 'Reorder', 'AttachPhotos', 'Delete', 'EmptyTrash', 'RequestRenameFolder', 'RequestEditFolderColor', 'RequestEditFolderIcon', 'DeleteFolder']
   .map((name) => [`on${name}`, () => { selected = name; }]));
 const home = homeMenuActions({ ...props, canAttachPhotos: true });
 assert.deepEqual(home.map((action) => action.title), ['설정', '검색', '순서 바꾸기', '사진 첨부', '모두 삭제']);
@@ -45,6 +45,13 @@ for (const showEmptyTrash of [false, true]) {
     assert.ok(!actions.some((action) => action.id === 'attachPhotos'), 'Folders never expose photo attachment');
     assert.equal(actions.some((action) => action.id === 'emptyTrash'), showEmptyTrash);
     assert.equal(actions.some((action) => action.id === 'renameFolder'), showFolderActions);
+    if (showFolderActions) {
+      assert.deepEqual(actions.slice(-4).map(action => action.id), ['renameFolder', 'editFolderColor', 'editFolderIcon', 'deleteFolder']);
+      for (const [id, handler] of [['editFolderColor', 'RequestEditFolderColor'], ['editFolderIcon', 'RequestEditFolderIcon']]) {
+        actions.find(action => action.id === id).onPress();
+        assert.equal(selected, handler);
+      }
+    }
   }
 }
 

@@ -2,6 +2,9 @@ import NativeWheelRing, { hasNativeWheelRing } from "../../modules/liquid-glass-
 import type { WheelRingViewProps } from "../../modules/liquid-glass-wheel/src/LiquidGlassWheel.types";
 import { StyleSheet, View } from "react-native";
 import type { Folder } from "@/lib/local-store";
+import { folderSymbol } from "@/lib/folder-icons";
+import { folderColorFor, folderIconTint } from "@/lib/folder-colors";
+import { FOLDER_ROW } from "./folder-row-appearance";
 import { Image } from "expo-image";
 import { MaskedView } from "@expo/ui/community/masked-view";
 import { SymbolView, type SymbolViewProps } from "expo-symbols";
@@ -45,6 +48,9 @@ type Target = {
   start: number;
   end: number;
   kind: "folder" | "trash";
+  color?: string;
+  titleColor?: string;
+  iconColor?: string;
 };
 
 const TRASH_TITLE = "삭제";
@@ -59,17 +65,20 @@ function folderSector(index: number, folderCount: number) {
   };
 }
 
-function targetsFor(folders: Folder[]): Target[] {
+function targetsFor(folders: Folder[], isDark: boolean): Target[] {
   const slotSize = 360 / (folders.length + 1);
   const targets: Target[] = folders.map((folder, index): Target => ({
       id: index,
       title: folder.name,
-      symbol: folder.kind === "todo" ? "checklist" : "folder",
+      symbol: folderSymbol(folder.kind === "todo" ? "checklist" : folder.icon ?? "folder"),
       ...folderSector(index, folders.length),
       kind: "folder",
+      color: folder.kind === "custom" ? folderIconTint(folder.color, isDark) : undefined,
+      titleColor: folder.kind === "custom" ? folderColorFor(folder.color, isDark) : undefined,
+      iconColor: folder.kind === "todo" ? FOLDER_ROW.todoIcon[isDark ? "dark" : "light"] : undefined,
     }));
   return [
-    { id: folders.length, title: TRASH_TITLE, symbol: "trash", start: 360 - slotSize / 2, end: 360 + slotSize / 2, kind: "trash" },
+    { id: folders.length, title: TRASH_TITLE, symbol: folderSymbol("trash"), start: 360 - slotSize / 2, end: 360 + slotSize / 2, kind: "trash" },
     ...targets,
   ];
 }
@@ -104,7 +113,7 @@ function sectorSource(start: number, end: number, fill: string) {
 }
 
 function selectionColor(target: Target) {
-  return target.kind === "trash" ? DELETE_COLOR : ACCENT;
+  return target.color ?? (target.kind === "trash" ? DELETE_COLOR : ACCENT);
 }
 
 function WheelSector({ target, wheel }: {
@@ -132,14 +141,14 @@ function WheelTarget({ target, wheel, size, isDark }: {
 }) {
   const selectedColor = selectionColor(target);
   const isTrash = target.kind === "trash";
-  const baseColor = isTrash ? DELETE_TEXT : isDark ? TEXT_DARK : TEXT_LIGHT;
+  const baseColor = target.color ?? (isTrash ? DELETE_TEXT : isDark ? TEXT_DARK : TEXT_LIGHT);
   const radians = (target.start + target.end) / 2 * Math.PI / 180;
   const radius = size * 0.39;
   const highlightStyle = useAnimatedStyle(() => ({
     opacity: withTiming(wheel.selected.get() === target.id ? 1 : 0, FEEDBACK),
   }));
   const labelStyle = useAnimatedStyle(() => ({
-    color: wheel.selected.get() === target.id ? selectedColor : baseColor,
+    color: wheel.selected.get() === target.id ? target.titleColor ?? selectedColor : target.titleColor ?? baseColor,
     opacity: 1,
   }));
 
@@ -149,9 +158,9 @@ function WheelTarget({ target, wheel, size, isDark }: {
         top: size / 2 - radius * Math.cos(radians) - 32,
       }]}>
         <View style={styles.symbol}>
-          <SymbolView name={target.symbol} tintColor={baseColor} size={30} weight="regular" style={styles.symbol} />
+          <SymbolView name={target.symbol} tintColor={target.iconColor ?? baseColor} size={30} weight="regular" style={styles.symbol} />
           <Animated.View style={[StyleSheet.absoluteFill, highlightStyle]}>
-            <SymbolView name={target.symbol} tintColor={selectedColor} size={30} weight="regular" style={styles.symbol} />
+            <SymbolView name={target.symbol} tintColor={target.iconColor ?? selectedColor} size={30} weight="regular" style={styles.symbol} />
           </Animated.View>
         </View>
         <Animated.Text numberOfLines={1} style={[styles.label, labelStyle]}>{target.title}</Animated.Text>
@@ -181,7 +190,7 @@ function WheelRing({ size }: { size: number }) {
 
 function WheelContents({ wheel, size, isDark, folders }: { wheel: WheelState; size: number; isDark: boolean; folders: Folder[] }) {
   const opacityStyle = useAnimatedStyle(() => ({ opacity: wheel.opacity.get() }));
-  const targets = targetsFor(folders);
+  const targets = targetsFor(folders, isDark);
   return (
     <Animated.View style={[StyleSheet.absoluteFill, opacityStyle]}>
       {targets.map((target) => (

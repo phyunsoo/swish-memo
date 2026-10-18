@@ -15,7 +15,7 @@ function load(name, dependencies = {}) {
 }
 
 const sync = load('memo-sync.ts');
-const validation = load('memo-validation.ts');
+const validation = load('memo-validation.ts', { './folder-colors': load('folder-colors.ts') });
 const { createCloudSyncCoordinator } = load('memo-sync-coordinator.ts');
 const note = { id: 1, text: 'original', timestamp: 10, state: 'saved', folderId: null };
 const empty = { notes: [], folders: [], syncTombstones: [] };

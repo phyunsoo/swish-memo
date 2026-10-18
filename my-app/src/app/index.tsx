@@ -38,6 +38,11 @@ import { FolderKebabMenu } from "@/components/folder-kebab-menu";
 import { getNoteTextStyle, NOTE_TEXT_SIZE, NOTE_LINE_HEIGHT } from "@/lib/note-typography";
 import { useAppearance } from "@/lib/appearance";
 import { EmptyNoteDetail, NoteDetailPane, NoteListRow } from "@/components/wide-note-workspace";
+import { FolderIconSheet } from "@/components/folder-icon-sheet";
+import { FolderColorSheet } from "@/components/folder-color-sheet";
+import type { FolderIcon } from "@/lib/folder-icons";
+import type { SFSymbol } from "expo-symbols";
+import { DEFAULT_FOLDER_COLOR, folderColorFor, folderColorSwatch, folderIconTint, type FolderColorId } from "@/lib/folder-colors";
 const ACCENT = "#E7A000";
 const BUTTON_HEIGHT = GLASS_BUTTON_SIZE;
 
@@ -65,6 +70,10 @@ export default function Index() {
   const [focusedNoteId, setFocusedNoteId] = useState<number | null>(null);
   const [activeView, setActiveView] = useState("home");
   const [reordering, setReordering] = useState(false);
+  const [iconEditingFolder, setIconEditingFolder] = useState<Folder | null>(null);
+  const [selectedFolderIcon, setSelectedFolderIcon] = useState<FolderIcon>("folder");
+  const [colorEditingFolder, setColorEditingFolder] = useState<Folder | null>(null);
+  const [selectedFolderColor, setSelectedFolderColor] = useState<FolderColorId>(DEFAULT_FOLDER_COLOR);
   const [activeEditor, setActiveEditor] = useState<"new" | number | null>(null);
   useFocusEffect(useCallback(() => {
     if (view !== "todo") return;
@@ -235,6 +244,19 @@ export default function Index() {
     Alert.prompt("폴더 이름 변경", "폴더 이름을 입력하세요.", (name) => renameFolder(folder, name), "plain-text", folder.name);
   };
 
+  const saveFolderIcon = (folderId: string, icon: SFSymbol) => {
+    setFolders((current) => current.map((folder) => folder.id === folderId && folder.kind === "custom"
+      ? { ...folder, icon }
+      : folder));
+  };
+
+  const saveFolderColor = (folderId: string, color: FolderColorId) => {
+    setFolders((current) => current.map((folder) => folder.id === folderId && folder.kind === "custom"
+      && folderColorSwatch(folder.color) !== folderColorSwatch(color)
+      ? { ...folder, color }
+      : folder));
+  };
+
   const confirmDeleteFolder = (folder: Folder) => {
     Alert.alert("폴더 삭제", `‘${folder.name}’ 폴더를 삭제할까요? 폴더 안의 메모는 휴지통으로 이동합니다.`, [
       { text: "취소", style: "cancel" },
@@ -311,6 +333,9 @@ export default function Index() {
   const viewTitle = activeView === "home" ? "작성 화면"
     : activeView === "trash" ? "휴지통"
       : activeFolder?.name ?? "폴더";
+  const viewTitleColor = activeFolder?.kind === "custom"
+    ? folderColorFor(activeFolder.color, isDark)
+    : isDark ? "#F5F5F2" : "#171717";
 
   const openSearch = () => {
     inputRef.current?.blur();
@@ -470,7 +495,7 @@ export default function Index() {
             />}
             {(activeView !== "home" || wide) && (
               <View pointerEvents="none" style={wide ? styles.wideToolbarTitle : styles.toolbarTitleWrap}>
-                <NativeText numberOfLines={1} style={[styles.toolbarTitle, { color: isDark ? "#F5F5F2" : "#171717" }]}>
+                <NativeText numberOfLines={1} style={[styles.toolbarTitle, { color: viewTitleColor }]}>
                   {viewTitle}
                 </NativeText>
               </View>
@@ -497,6 +522,16 @@ export default function Index() {
                   onEmptyTrash={confirmEmptyTrash}
                   showEmptyTrash={activeView === "trash"}
                   onRequestRenameFolder={() => { if (activeFolder) requestRenameFolder(activeFolder); }}
+                  onRequestEditFolderColor={() => {
+                    if (activeFolder?.kind !== "custom") return;
+                    setSelectedFolderColor(activeFolder.color ?? DEFAULT_FOLDER_COLOR);
+                    setColorEditingFolder(activeFolder);
+                  }}
+                  onRequestEditFolderIcon={() => {
+                    if (activeFolder?.kind !== "custom") return;
+                    setSelectedFolderIcon(activeFolder.icon ?? "folder");
+                    setIconEditingFolder(activeFolder);
+                  }}
                   onDeleteFolder={() => { if (activeFolder) confirmDeleteFolder(activeFolder); }}
                   showFolderActions={activeFolder?.kind === "custom"}
                 />
@@ -576,6 +611,23 @@ export default function Index() {
         </View>
       </View>
       </GestureDetector>
+      <FolderIconSheet
+        folder={iconEditingFolder}
+        selectedIcon={selectedFolderIcon}
+        isDark={isDark}
+        symbolColor={folderIconTint(iconEditingFolder?.color, isDark)}
+        onClose={() => setIconEditingFolder(null)}
+        onSave={() => { if (iconEditingFolder) saveFolderIcon(iconEditingFolder.id, selectedFolderIcon); }}
+        onSelectIcon={setSelectedFolderIcon}
+      />
+      <FolderColorSheet
+        folder={colorEditingFolder}
+        selectedColor={selectedFolderColor}
+        isDark={isDark}
+        onClose={() => setColorEditingFolder(null)}
+        onSave={() => { if (colorEditingFolder) saveFolderColor(colorEditingFolder.id, selectedFolderColor); }}
+        onSelectColor={setSelectedFolderColor}
+      />
     </>
   );
 }

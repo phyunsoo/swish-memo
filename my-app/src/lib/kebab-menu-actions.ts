@@ -31,12 +31,15 @@ export function homeMenuActions(props: CommonActions & {
 
 export function folderMenuActions(props: CommonActions & {
   showEmptyTrash: boolean; onEmptyTrash: () => void;
-  showFolderActions: boolean; onRequestRenameFolder: () => void; onDeleteFolder: () => void;
+  showFolderActions: boolean; onRequestRenameFolder: () => void; onRequestEditFolderColor: () => void;
+  onRequestEditFolderIcon: () => void; onDeleteFolder: () => void;
 }): KebabMenuAction[] {
   const actions = commonActions(props);
   if (props.showEmptyTrash) actions.push({ id: "emptyTrash", title: "휴지통 비우기", systemImage: "trash", destructive: true, onPress: props.onEmptyTrash });
   if (props.showFolderActions) actions.push(
     { id: "renameFolder", title: "폴더 이름 변경", systemImage: "pencil", onPress: props.onRequestRenameFolder },
+    { id: "editFolderColor", title: "폴더 색상 편집", systemImage: "paintpalette", onPress: props.onRequestEditFolderColor },
+    { id: "editFolderIcon", title: "폴더 아이콘 편집", systemImage: "square.grid.3x3", onPress: props.onRequestEditFolderIcon },
     { id: "deleteFolder", title: "폴더 삭제", systemImage: "trash", destructive: true, onPress: props.onDeleteFolder },
   );
   return actions;

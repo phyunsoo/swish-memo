@@ -12,7 +12,7 @@ function load(name, dependencies = {}) {
   }, module.exports, module);
   return module.exports;
 }
-const validation = load('memo-validation.ts');
+const validation = load('memo-validation.ts', { './folder-colors': load('folder-colors.ts') });
 const { createCloudMemoClient } = load('cloud-memo-client.ts', {
   expo: { requireOptionalNativeModule: () => null },
   'react-native': { Platform: { OS: 'ios' } },
