@@ -35,12 +35,11 @@ export function NoteListRow({ note, text = note.text, selected, isDark, onSelect
   );
 }
 
-export function NoteDetailPane({ children, isDark, topInset, bottomInset, keyboardInset, searchTarget, nativeScroll }: {
+export function NoteDetailPane({ children, isDark, topInset, bottomInset, searchTarget, nativeScroll }: {
   children: ReactNode;
   isDark: boolean;
   topInset: number;
   bottomInset: number;
-  keyboardInset: number;
   searchTarget: SearchScrollTarget | null;
   nativeScroll: NativeGesture;
 }) {
@@ -51,7 +50,7 @@ export function NoteDetailPane({ children, isDark, topInset, bottomInset, keyboa
   useEffect(scrollToMatch, [scrollToMatch]);
   return (
     <GestureDetector gesture={nativeScroll}>
-      <ScrollView ref={scrollRef} style={[styles.detail, { marginBottom: keyboardInset }]}
+      <ScrollView ref={scrollRef} style={styles.detail}
         keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets={false}
         contentInsetAdjustmentBehavior="never" onContentSizeChange={scrollToMatch}
         contentContainerStyle={{ flexGrow: 1, paddingTop: topInset, paddingBottom: bottomInset }}>

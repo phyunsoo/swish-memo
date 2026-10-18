@@ -104,7 +104,7 @@ const { FolderQuickMenu } = load('components/folder-quick-menu.tsx', {
 const shared = value => ({ get: () => value });
 const menu = { opacity: shared(1), selected: shared(-1), scrollOffset: shared(0), layout: shared({ width: 280, height: 200, left: 0, top: 0, listHeight: 100 }) };
 for (const isDark of [false, true]) {
-  const rendered = FolderQuickMenu({ menu, folders: [], isDark, isTrashView: false });
+  const rendered = FolderQuickMenu({ menu, originX: shared(0), originY: shared(0), folders: [], isDark, isTrashView: false });
   const trash = descendants(rendered).find(node => node.type === 'SymbolView' && node.props.name?.ios === 'trash');
   assert.equal(trash.props.tintColor, rowAppearance.FOLDER_ROW.trash);
 }

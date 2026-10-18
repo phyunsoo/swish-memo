@@ -32,6 +32,7 @@ function useMemoStorageState() {
     });
   }, []);
   const [draft, setDraft] = useState(emptyNoteDraft);
+  const [draftSession, setDraftSession] = useState(0);
   const changeDraftText = useCallback((text: string) => {
     setDraft((current) => updateNoteDraft(current, { text }));
   }, []);
@@ -43,7 +44,10 @@ function useMemoStorageState() {
       photos: current.photos.filter((item) => item.fileName !== photo.fileName),
     }));
   }, []);
-  const clearDraft = useCallback(() => setDraft(emptyNoteDraft()), []);
+  const clearDraft = useCallback(() => {
+    setDraft(emptyNoteDraft());
+    setDraftSession((session) => session + 1);
+  }, []);
   const [noteFontSize, setNoteFontSize] = useState<number>(NOTE_TEXT_SIZE.default);
   const [notePlaceholder, setNotePlaceholder] = useState(INITIAL_SNAPSHOT.notePlaceholder);
   const [markdownEnabled, setMarkdownEnabled] = useState(INITIAL_SNAPSHOT.markdownEnabled);
@@ -100,7 +104,7 @@ function useMemoStorageState() {
     return nextNoteId.current;
   };
 
-  return { notes, setNotes, folders, setFolders, draft, changeDraftText, appendDraftPhotos, removeDraftPhoto, clearDraft, noteFontSize, setNoteFontSize, notePlaceholder, setNotePlaceholder, markdownEnabled, setMarkdownEnabled, hyperlinksEnabled, setHyperlinksEnabled, allocateNoteId, storageStatus };
+  return { notes, setNotes, folders, setFolders, draft, draftSession, changeDraftText, appendDraftPhotos, removeDraftPhoto, clearDraft, noteFontSize, setNoteFontSize, notePlaceholder, setNotePlaceholder, markdownEnabled, setMarkdownEnabled, hyperlinksEnabled, setHyperlinksEnabled, allocateNoteId, storageStatus };
 }
 
 const MemoStorageContext = createContext<ReturnType<typeof useMemoStorageState> | null>(null);

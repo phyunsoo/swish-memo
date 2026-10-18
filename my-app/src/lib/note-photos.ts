@@ -1,5 +1,10 @@
 import { Directory, File, Paths } from "expo-file-system";
-import type { ImagePickerAsset } from "expo-image-picker";
+
+export type NotePhotoAsset = {
+  uri: string;
+  width: number;
+  height: number;
+};
 
 export type NotePhoto = {
   fileName: string;
@@ -13,7 +18,7 @@ export function notePhotoUri(photo: NotePhoto): string {
   return new File(Paths.document, "memo-photos", photo.fileName).uri;
 }
 
-export function importNotePhotos(assets: ImagePickerAsset[]): NotePhoto[] {
+export function importNotePhotos(assets: NotePhotoAsset[]): NotePhoto[] {
   const directory = new Directory(Paths.document, "memo-photos");
   directory.create({ intermediates: true, idempotent: true });
   const copied: File[] = [];

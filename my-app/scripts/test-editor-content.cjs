@@ -55,9 +55,7 @@ for (const showEmptyTrash of [false, true]) {
   }
 }
 
-const { resolvePhotoAttachmentTarget } = load('hooks/use-photo-attachment.ts', {
-  react: {}, 'react-native': {}, 'expo-image-picker': {}, '@/lib/note-photos': {},
-});
+const { resolvePhotoAttachmentTarget } = load('lib/photo-attachment-target.ts');
 const notes = [{ id: 1, folderId: null }, { id: 2, folderId: 'todo' }];
 assert.equal(resolvePhotoAttachmentTarget(null, 'home', notes), 'new');
 assert.equal(resolvePhotoAttachmentTarget(1, 'home', notes), 1, 'Both buttons attach to the edited note');

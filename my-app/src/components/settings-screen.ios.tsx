@@ -1,9 +1,10 @@
+import { isRunningOnMac } from "../../modules/liquid-glass-wheel/src/runtime-platform";
 import { useEffect, useState } from "react";
 import { Host, Switch } from "@expo/ui";
 import { cloudMemoClient } from "@/lib/cloud-memo-client";
 import { Button, Form, HStack, Image, Section, Spacer, Text, VStack } from "@expo/ui/swift-ui";
 import {
-  accessibilityLabel, alignmentGuide, buttonStyle, contentShape, font, foregroundStyle, frame, padding, shapes,
+  accessibilityLabel, alignmentGuide, buttonStyle, contentShape, font, foregroundStyle, frame, padding, scrollContentBackground, shapes,
 } from "@expo/ui/swift-ui/modifiers";
 import Constants from "expo-constants";
 import { useAppearance } from "@/lib/appearance";
@@ -76,7 +77,7 @@ export default function SettingsScreen({ mode, onModeChange, noteFontSize, onNot
               <Text modifiers={[foregroundStyle("#007AFF")]}>닫기</Text>
             </Button>
           </HStack>
-          <Form>
+          <Form modifiers={isRunningOnMac ? [scrollContentBackground("hidden")] : undefined}>
             <Section title="화면">
               <SettingsActionRow
                 title="화면 모드"
