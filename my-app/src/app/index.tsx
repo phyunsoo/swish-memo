@@ -466,12 +466,12 @@ export default function Index() {
             )}
             <View pointerEvents="box-none" style={styles.toolbarActions}>
               {wide && canAttachPhotos && <GlassButton label="사진 첨부" symbol="paperclip"
-                tint="#000000" onPress={() => { void attachPhotos(); }} />}
+                tint={isDark ? "#F5F5F2" : "#000000"} onPress={() => { void attachPhotos(); }} />}
               {showDraftSaveButton && (
                 <NativeCheckButton onPress={createNote} />
               )}
               {!reordering && <GlassButton label="새 메모" symbol="square.and.pencil"
-                tint="#000000" onPress={startNewNote} />}
+                tint={isDark ? "#F5F5F2" : "#000000"} onPress={startNewNote} />}
               {reordering ? (
                 <NativeCheckButton onPress={() => setReordering(false)} />
               ) : activeView === "home" ? (
