@@ -1,4 +1,6 @@
+import { EditorTextInput } from "@/components/editor-text-input";
 import { NoteCard } from "@/components/note-card";
+import { MoveSuccessHud } from "@/components/move-success-hud";
 import { NotePhotos } from "@/components/note-photos";
 import { EditorKeyboardToolbar, EDITOR_KEYBOARD_TOOLBAR_INSET } from "@/components/editor-keyboard-toolbar";
 import type { NotePhoto } from "@/lib/note-photos";
@@ -18,7 +20,6 @@ import {
   StatusBar,
   StyleSheet,
   Text as NativeText,
-  TextInput as NativeTextInput,
   View,
   useWindowDimensions,
 } from "react-native";
@@ -66,11 +67,15 @@ export default function Index() {
   const { text: noteText, photos: notePhotos, timestamp: noteTimestamp } = draft;
   const {
     inputRef, editInputRef, selectedNoteId, setSelectedNoteId,
-    editingNoteId, setEditingNoteId, editingText, setEditingTimestamp,
-    focusedNoteId, setFocusedNoteId, activeEditor, setActiveEditor,
-    saveEditingNote, finishEditing, createNote, resumeEditing, changeEditingText, focusDraft,
+    editingNoteId, editingText, editorNotes,
+    focusedNoteId, setFocusedNoteId, activeEditor, stopEditing, activateDraft,
+    finishEditing, createNote, createFolderNote, resumeEditing, changeEditingText, changeEditingPhotos, focusDraft,
   } = useNoteEditor();
   const [activeView, setActiveView] = useState("home");
+  const [moveFeedback, setMoveFeedback] = useState<{
+    noteId: number; folderId: string | null; state: "saved" | "trash"; destination: string; key: number;
+  } | null>(null);
+  const dismissMoveFeedback = useCallback(() => setMoveFeedback(null), []);
   const [reordering, setReordering] = useState(false);
   const [dragOverlayState, setDragOverlayState] = useState<DragOverlayState | null>(null);
   const [iconEditingFolder, setIconEditingFolder] = useState<Folder | null>(null);
@@ -82,28 +87,28 @@ export default function Index() {
     setActiveView("todo");
     setSelectedNoteId(null);
     setFocusedNoteId(null);
-    setEditingNoteId(null);
+    stopEditing();
     Keyboard.dismiss();
     router.setParams({ view: undefined });
-  }, [view, router, setActiveView, setFocusedNoteId, setEditingNoteId, setSelectedNoteId]));
-  const visibleNotes = useMemo(() => notes.filter((note) => {
+  }, [view, router, setActiveView, setFocusedNoteId, stopEditing, setSelectedNoteId]));
+  const visibleNotes = useMemo(() => editorNotes.filter((note) => {
     if (activeView === "home") return note.state === "draft" || note.id === focusedNoteId;
     if (activeView === "trash") return note.state === "trash";
     return note.state === "saved" && note.folderId === activeView;
   }).sort(activeView === "todo" && folders.find((folder) => folder.id === "todo")?.noteOrder === "recent"
     ? (first, second) => second.timestamp - first.timestamp
-    : compareNoteOrder), [notes, activeView, focusedNoteId, folders]);
+    : compareNoteOrder), [editorNotes, activeView, focusedNoteId, folders]);
   const search = useNoteSearch(visibleNotes, editingNoteId, editingText);
   const { close: resetSearch } = search;
   const selectedNote = visibleNotes.find((note) => note.id === (search.selectedMatch?.noteId ?? selectedNoteId ?? editingNoteId))
     ?? (activeView === "home" ? undefined : visibleNotes[0]);
   const isEditingCard = editingNoteId !== null;
   const hasContent = hasNoteContent(draft);
-  const showDraftSaveButton = !reordering && hasContent && (!wide || !selectedNote);
+  const showDraftSaveButton = activeView === "home" && !isEditingCard && !reordering && hasContent && keyboardHeight === 0 && (!wide || !selectedNote);
   const {
     visible: drawerVisible, width: drawerWidth, open: openDrawer, close: closeDrawer,
     panGesture: drawerPanGesture, contentStyle: appShiftStyle, panelStyle: drawerPanelStyle, scrimStyle,
-  } = useFolderDrawer(!search.visible && !wide);
+  } = useFolderDrawer(!search.visible && !wide && !isEditingCard && activeEditor !== "new");
   useEffect(() => { if (wide) closeDrawer(); }, [wide, closeDrawer]);
   const attachmentEnabled = storageStatus === "ready" && !search.visible && !reordering && (!drawerVisible || pinnedFolders)
     && (!wide || !selectedNote || editingNoteId === selectedNote.id);
@@ -111,17 +116,12 @@ export default function Index() {
     : activeEditor !== null && editingNoteId === activeEditor);
   const bottomOverlayInset = (search.visible ? 160 : 0)
     + (canDismissKeyboard && keyboardHeight > 0 ? EDITOR_KEYBOARD_TOOLBAR_INSET : 0);
-  const attachmentTarget = resolvePhotoAttachmentTarget(editingNoteId, activeView, notes);
+  const attachmentTarget = resolvePhotoAttachmentTarget(editingNoteId, activeView, editorNotes);
   const attachmentKey = photoAttachmentTargetKey(attachmentTarget, draftSession);
   const handlePhotoAttach = useCallback((target: PhotoAttachmentTarget, photos: NotePhoto[]) => {
     if (target === "new") appendDraftPhotos(photos);
-    else {
-      const timestamp = Date.now();
-      setNotes((current) => current.map((note) => note.id === target
-        ? { ...note, photos: [...(note.photos ?? []), ...photos], timestamp } : note));
-      setEditingTimestamp(timestamp);
-    }
-  }, [appendDraftPhotos, setNotes, setEditingTimestamp]);
+    else changeEditingPhotos(target, (current) => [...current, ...photos]);
+  }, [appendDraftPhotos, changeEditingPhotos]);
   const { attachPhotos, attachDroppedPhotos, isPickingPhotos } = usePhotoAttachment({
     target: attachmentTarget,
     targetKey: attachmentKey,
@@ -135,15 +135,9 @@ export default function Index() {
   const canAttachPhotos = attachmentEnabled && attachmentTarget !== null && !isPickingPhotos;
 
   const removePhoto = useCallback((target: "new" | number, photo: NotePhoto) => {
-    const timestamp = Date.now();
-    if (target === "new") {
-      removeDraftPhoto(photo);
-    } else {
-      setNotes((current) => current.map((note) => note.id === target
-        ? { ...note, photos: note.photos?.filter((item) => item.fileName !== photo.fileName), timestamp } : note));
-      setEditingTimestamp(timestamp);
-    }
-  }, [removeDraftPhoto, setNotes, setEditingTimestamp]);
+    if (target === "new") removeDraftPhoto(photo);
+    else changeEditingPhotos(target, (current) => current.filter((item) => item.fileName !== photo.fileName));
+  }, [removeDraftPhoto, changeEditingPhotos]);
 
   const createFolder = () => {
     if (folders.length >= 12) {
@@ -168,7 +162,7 @@ export default function Index() {
 
   const onDrop = (noteId: number, targetId: number) => {
     const note = notes.find((item) => item.id === noteId);
-    if (!note) return;
+    if (!note || targetId < 0 || targetId > folders.length) return;
     const trashTarget = targetId === folders.length;
     const targetFolder = targetId < folders.length ? folders[targetId] : undefined;
     if (targetFolder?.id === "todo" && (!isValidTodoText(note.text) || (note.photos?.length ?? 0) > 0)) {
@@ -177,6 +171,7 @@ export default function Index() {
     }
     const folderId = targetFolder?.id ?? null;
     const state = trashTarget ? "trash" : "saved";
+    if (note.state === state && note.folderId === folderId && !trashTarget) return;
     if (trashTarget && activeView === "trash" && note.state === "trash") {
       setNotes((current) => current.filter((item) => item.id !== noteId));
     } else {
@@ -184,8 +179,9 @@ export default function Index() {
         const moving = current.find((item) => item.id === noteId);
         return moving ? moveNotesToDestination(current, [{ ...moving, timestamp: Date.now() }], { folderId, state }) : current;
       });
+      setMoveFeedback({ noteId, folderId, state, destination: trashTarget ? "휴지통" : targetFolder!.name, key: Date.now() });
     }
-    setEditingNoteId(null);
+    stopEditing();
     setFocusedNoteId(null);
     Keyboard.dismiss();
   };
@@ -215,7 +211,7 @@ export default function Index() {
             return moveNotesToDestination(current, moving, { folderId: null, state: "trash" });
           });
           clearDraft();
-          setEditingNoteId(null);
+          stopEditing();
           setFocusedNoteId(null);
           Keyboard.dismiss();
         },
@@ -315,6 +311,12 @@ export default function Index() {
   };
 
   const startNewNote = () => {
+    if (storageStatus !== "ready") return;
+    if (activeFolder) {
+      closeSearch();
+      createFolderNote(activeFolder.id);
+      return;
+    }
     if (storageStatus !== "ready" || !selectView("home")) return;
     createNote();
     focusDraft();
@@ -326,6 +328,7 @@ export default function Index() {
       reorderHandle={reorderHandle}
       isDark={isDark}
       editing={editingNoteId === note.id}
+      keyboardVisible={keyboardHeight > 0}
       reordering={reordering}
       editingText={editingText}
       editInputRef={editInputRef}
@@ -339,28 +342,21 @@ export default function Index() {
       }}
       onEdit={() => editingNoteId === note.id ? finishEditing() : resumeEditing(note)}
       onChangeText={changeEditingText}
-      onInputFocus={() => setActiveEditor(note.id)}
       onRemovePhoto={(photo) => removePhoto(note.id, photo)}
     />
   );
 
   const draftEditor = (
     <View style={[styles.editorCard, styles.editingCard]}>
-      <NativeTextInput
-        ref={inputRef}
+      <EditorTextInput
+        inputRef={inputRef}
         accessibilityLabel="새 메모 내용"
         editable={!search.visible}
         accessibilityHint="떠오른 생각을 자유롭게 입력하세요"
         autoFocus={!wide}
         multiline
         onChangeText={changeDraftText}
-        onFocus={() => {
-          if (editingNoteId !== null) {
-            saveEditingNote();
-            setEditingNoteId(null);
-          }
-          setActiveEditor("new");
-        }}
+        onFocus={activateDraft}
         value={noteText}
         scrollEnabled={false}
         selectionColor={ACCENT}
@@ -514,6 +510,7 @@ export default function Index() {
           renderDetail={wide ? (nativeScroll, wrapNote) => (
             <NoteDetailPane key={selectedNote?.id ?? "new"} isDark={isDark} topInset={8}
               bottomInset={Math.max(insets.bottom, 24) + bottomOverlayInset}
+              keyboardHeight={keyboardHeight} editorOverlayInset={bottomOverlayInset}
               nativeScroll={nativeScroll}
               searchTarget={search.target?.noteId === selectedNote?.id ? search.target : null}>
               {selectedNote ? wrapNote(renderNoteCard(selectedNote)) : activeView === "home" ? draftEditor : <EmptyNoteDetail isDark={isDark} />}
@@ -522,6 +519,7 @@ export default function Index() {
           editing={isEditingCard || search.visible}
           reordering={reordering}
           keyboardInset={keyboardHeight}
+          editorOverlayInset={bottomOverlayInset}
           searchTarget={wide && search.selectedMatch ? { noteId: search.selectedMatch.noteId, offset: 0, key: `${search.query}:${search.activeIndex}` } : search.target}
           onDrop={onDrop}
           onReorder={(ids) => reorderNotes(ids, activeView)}
@@ -561,7 +559,8 @@ export default function Index() {
         </View>
         </Animated.View>
         <EditorKeyboardToolbar visible={canDismissKeyboard} canAttachPhotos={canAttachPhotos}
-          keyboardHeight={keyboardHeight} isDark={isDark} onAttachPhotos={() => { void attachPhotos(); }} />
+          keyboardHeight={keyboardHeight} isDark={isDark} onAttachPhotos={() => { void attachPhotos(); }}
+          onComplete={isEditingCard ? () => { finishEditing(); } : hasContent ? createNote : undefined} />
         {search.visible && <NoteSearch
           folderName={viewTitle} isDark={isDark} topInset={insets.top} bottomInset={insets.bottom}
           query={search.query} total={search.total} activeIndex={search.activeIndex}
@@ -576,6 +575,9 @@ export default function Index() {
         {/* Drag positions use screen coordinates, including the persistent sidebar. */}
         {dragOverlayState && <DragOverlay drag={dragOverlayState} notes={visibleNotes} folders={folders}
           isDark={isDark} isTrashView={activeView === "trash"} noteFontSize={noteFontSize} />}
+        {moveFeedback && notes.some((note) => note.id === moveFeedback.noteId && note.folderId === moveFeedback.folderId
+          && note.state === moveFeedback.state) && <MoveSuccessHud key={moveFeedback.key}
+          destination={moveFeedback.destination} isDark={isDark} onDismiss={dismissMoveFeedback} />}
       </View>
       </GestureDetector>
       </MacPhotoDropContainer>

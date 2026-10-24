@@ -1,4 +1,5 @@
-import type { ReactNode, Ref } from "react";
+import { EditorTextInput } from "./editor-text-input";
+import type { ReactNode, RefObject } from "react";
 import { StyleSheet, Text as NativeText, TextInput as NativeTextInput, View } from "react-native";
 import type { StoredNote } from "@/lib/local-store";
 import type { useNoteSearch } from "@/hooks/use-note-search";
@@ -31,9 +32,10 @@ type Props = {
   reorderHandle: ReactNode;
   isDark: boolean;
   editing: boolean;
+  keyboardVisible?: boolean;
   reordering: boolean;
   editingText: string;
-  editInputRef: Ref<NativeTextInput>;
+  editInputRef: RefObject<NativeTextInput | null>;
   noteFontSize: number;
   markdownEnabled: boolean;
   hyperlinksEnabled: boolean;
@@ -41,13 +43,12 @@ type Props = {
   onComplete: () => void;
   onEdit: () => void;
   onChangeText: (text: string) => void;
-  onInputFocus: () => void;
   onRemovePhoto: (photo: NotePhoto) => void;
 };
 
-export function NoteCard({ note, reorderHandle, isDark, editing, reordering, editingText,
+export function NoteCard({ note, reorderHandle, isDark, editing, keyboardVisible, reordering, editingText,
   editInputRef, noteFontSize, markdownEnabled, hyperlinksEnabled, search, onComplete, onEdit, onChangeText,
-  onInputFocus, onRemovePhoto }: Props) {
+  onRemovePhoto }: Props) {
   const noteTextStyle = getNoteTextStyle(noteFontSize);
   const colors = getNoteColors(isDark);
   return (
@@ -75,7 +76,7 @@ export function NoteCard({ note, reorderHandle, isDark, editing, reordering, edi
               glassTint={colors.control}
               onPress={onComplete} />
           )}
-          {!search.visible && !reordering && <GlassTextButton
+          {!search.visible && !reordering && !(editing && keyboardVisible) && <GlassTextButton
             title={editing ? "완료" : "편집"}
             textColor={isDark ? "#FFFFFF" : "#000000"}
             width={TEXT_BUTTON_WIDTH}
@@ -87,15 +88,14 @@ export function NoteCard({ note, reorderHandle, isDark, editing, reordering, edi
         </View>
       </View>
       {editing && (
-        <NativeTextInput
-          ref={editInputRef}
+        <EditorTextInput
+          inputRef={editInputRef}
           accessibilityLabel="메모 내용 편집"
           autoFocus
           multiline
           editable={!search.visible}
           value={editingText}
           onChangeText={onChangeText}
-          onFocus={onInputFocus}
           scrollEnabled={false}
           selectionColor={ACCENT}
           style={[

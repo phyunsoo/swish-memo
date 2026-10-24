@@ -142,18 +142,19 @@ function testEditor() {
   const draftRules = load('lib/note-draft.ts');
   const rules = load('lib/memo-rules.ts', { expo: { requireOptionalNativeModule: () => null } });
   const order = load('lib/note-order.ts', { './memo-rules': rules });
+  const sessions = load('lib/editor-session.ts', { './note-draft': draftRules, './memo-rules': rules });
   const store = {
     notes: [{ id: 1, text: '기존', timestamp: 1, sortOrder: 9, folderId: null, state: 'draft' }],
     draft: { text: '새 내용', photos: [photo], timestamp: 5 }, draftSession: 1,
     setNotes(action) { store.notes = action(store.notes); },
     clearDraft() { store.draft = draftRules.emptyNoteDraft(); store.draftSession++; },
-    allocateNoteId: () => 2,
+    allocateNoteId: () => Math.max(...store.notes.map(note => note.id), 1) + 1,
   };
   const alerts = [];
   const { useNoteEditor } = load('hooks/use-note-editor.ts', {
     react: runtime.react, 'react-native': { Keyboard: { dismiss() {} }, Alert: { alert: (...args) => alerts.push(args) } },
     './use-memo-storage': { useMemoStorage: () => store },
-    '@/lib/note-draft': draftRules, '@/lib/memo-rules': rules, '@/lib/note-order': order,
+    '@/lib/note-draft': draftRules, '@/lib/memo-rules': rules, '@/lib/note-order': order, '@/lib/editor-session': sessions,
   });
   const render = () => runtime.render(useNoteEditor);
   render().createNote();
@@ -176,6 +177,44 @@ function testEditor() {
   assert.equal(render().finishEditing(), true);
   assert.equal(store.notes[2].text, '완료할 일');
   assert.equal(render().editingNoteId, null);
+
+  render().createFolderNote('clock');
+  const folderNoteId = render().editingNoteId;
+  assert.equal(store.notes.some(note => note.id === folderNoteId), false, 'Empty new cards never enter persistent storage');
+  assert.equal(render().editorNotes.find(note => note.id === folderNoteId).folderId, 'clock');
+  render().changeEditingText('폴더에서 바로 작성');
+  assert.equal(store.notes.find(note => note.id === folderNoteId).text, '폴더에서 바로 작성', 'Typing persists content before finishing the editor');
+  render().finishEditing();
+  assert.equal(store.notes.find(note => note.id === folderNoteId).text, '폴더에서 바로 작성');
+  assert.equal(store.notes.find(note => note.id === folderNoteId).state, 'saved');
+  render().createFolderNote('clock');
+  const blankId = render().editingNoteId;
+  render().finishEditing();
+  assert.equal(store.notes.some(note => note.id === blankId), false, 'Leaving an empty new card removes it');
+  render().createFolderNote('todo');
+  const blankTodoId = render().editingNoteId;
+  assert.equal(render().finishEditing(), true);
+  assert.equal(store.notes.some(note => note.id === blankTodoId), false);
+  render().createFolderNote('clock');
+  const photoNoteId = render().editingNoteId;
+  render().changeEditingPhotos(photoNoteId, () => [photo]);
+  assert.deepEqual(store.notes.find(note => note.id === photoNoteId).photos, [photo]);
+  render().changeEditingText('사진과 글');
+  assert.deepEqual(store.notes.find(note => note.id === photoNoteId).photos, [photo], 'Text autosave retains newly attached photos');
+  render().changeEditingPhotos(photoNoteId, () => []);
+  render().changeEditingText('');
+  assert.equal(store.notes.some(note => note.id === photoNoteId), false, 'Clearing a new card removes the saved placeholder');
+  render().finishEditing();
+  render().resumeEditing(store.notes[0]);
+  render().changeEditingText('기존 메모 자동 저장');
+  assert.equal(store.notes[0].text, '기존 메모 자동 저장');
+  render().finishEditing();
+  render().activateDraft();
+  assert.equal(render().activeEditor, 'new');
+  render().stopEditing();
+  assert.equal(render().activeEditor, null);
+  assert.equal(render().editingNoteId, null);
+
 }
 
 function testReorder() {

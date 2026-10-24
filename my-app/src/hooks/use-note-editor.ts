@@ -1,49 +1,59 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Keyboard, TextInput } from "react-native";
 import { useMemoStorage } from "./use-memo-storage";
 import { hasNoteContent } from "@/lib/note-draft";
-import { isValidTodoText, updateNoteContent } from "@/lib/memo-rules";
+import { isValidTodoText, newTodoGeneration } from "@/lib/memo-rules";
 import { nextNoteOrder } from "@/lib/note-order";
+import { persistEditorNote, type EditorSession } from "@/lib/editor-session";
 import type { StoredNote } from "@/lib/local-store";
+import type { NotePhoto } from "@/lib/note-photos";
 
 export function useNoteEditor() {
   const { notes, setNotes, draft, clearDraft, allocateNoteId } = useMemoStorage();
   const inputRef = useRef<TextInput>(null);
   const editInputRef = useRef<TextInput>(null);
   const [selectedNoteId, setSelectedNoteId] = useState<number | null>(null);
-  const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
-  const [editingText, setEditingText] = useState("");
-  const [editingTimestamp, setEditingTimestamp] = useState(0);
   const [focusedNoteId, setFocusedNoteId] = useState<number | null>(null);
-  const [activeEditor, setActiveEditor] = useState<"new" | number | null>(null);
+  const [session, setSession] = useState<EditorSession>({ kind: "idle" });
   const [draftFocusRequest, setDraftFocusRequest] = useState(0);
+  const editingNoteId = session.kind === "note" ? session.note.id : null;
+  const editingText = session.kind === "note" ? session.note.text : "";
+  const activeEditor = session.kind === "draft" ? "new" : editingNoteId;
+  const editorNotes = useMemo(() => session.kind === "note" && session.isNew
+    && !notes.some((note) => note.id === session.note.id) ? [...notes, session.note] : notes, [notes, session]);
   useEffect(() => {
     if (draftFocusRequest > 0) inputRef.current?.focus();
   }, [draftFocusRequest]);
 
+  const stopEditing = useCallback(() => setSession({ kind: "idle" }), []);
+
   function saveEditingNote() {
-    if (editingNoteId === null) return;
-    setNotes((current) => updateNoteContent(current, editingNoteId, editingText, editingTimestamp));
+    setNotes((current) => persistEditorNote(current, session));
   }
 
-  function finishEditing() {
-    if (editingNoteId !== null) {
-      const note = notes.find((item) => item.id === editingNoteId);
-      if (note?.folderId === "todo" && !isValidTodoText(editingText)) {
+  function commitSession() {
+    if (session.kind === "note") {
+      const emptyNewNote = session.isNew && !hasNoteContent(session.note);
+      if (!emptyNewNote && session.note.folderId === "todo" && !isValidTodoText(session.note.text)) {
         Alert.alert("투두 형식을 확인해 주세요", "투두는 줄바꿈 없이 30자 이내로 작성해야 합니다.");
         return false;
       }
       saveEditingNote();
-      setEditingNoteId(null);
     }
+    return true;
+  }
+
+  function finishEditing() {
+    if (!commitSession()) return false;
+    stopEditing();
     inputRef.current?.blur();
     editInputRef.current?.blur();
-    setActiveEditor(null);
     Keyboard.dismiss();
     return true;
   }
 
   function createNote() {
+    if (!finishEditing()) return;
     if (hasNoteContent(draft)) {
       const note: StoredNote = {
         id: allocateNoteId(), ...draft, timestamp: draft.timestamp ?? Date.now(),
@@ -53,34 +63,62 @@ export function useNoteEditor() {
         ...note, sortOrder: nextNoteOrder(current.filter((item) => item.state === "draft")),
       }]);
     }
-    // A fresh draft also invalidates attachments still processing for the previous one.
     clearDraft();
-    inputRef.current?.blur();
-    Keyboard.dismiss();
   }
 
   function resumeEditing(note: StoredNote) {
     if (!finishEditing()) return;
     setSelectedNoteId(note.id);
-    setEditingNoteId(note.id);
-    setEditingText(note.text);
-    setEditingTimestamp(note.timestamp);
     setFocusedNoteId(note.id);
+    setSession({ kind: "note", note, isNew: false });
+  }
+
+  function createFolderNote(folderId: string) {
+    if (!finishEditing()) return;
+    const note: StoredNote = {
+      id: allocateNoteId(), text: "", photos: [], timestamp: Date.now(), folderId, state: "saved",
+      sortOrder: nextNoteOrder(notes.filter((item) => item.state === "saved" && item.folderId === folderId)),
+      ...(folderId === "todo" ? { todoGeneration: newTodoGeneration() } : {}),
+    };
+    setSelectedNoteId(note.id);
+    setFocusedNoteId(note.id);
+    setSession({ kind: "note", note, isNew: true });
   }
 
   function changeEditingText(text: string) {
-    setEditingText(text);
-    setEditingTimestamp(Date.now());
+    if (session.kind !== "note") return;
+    const next: EditorSession = { ...session, note: { ...session.note, text, timestamp: Date.now() } };
+    setSession(next);
+    setNotes((current) => persistEditorNote(current, next));
+  }
+
+  function changeEditingPhotos(noteId: number, update: (photos: NotePhoto[]) => NotePhoto[]) {
+    if (session.kind === "note" && session.note.id === noteId) {
+      const next: EditorSession = { ...session, note: { ...session.note, photos: update(session.note.photos ?? []), timestamp: Date.now() } };
+      setSession(next);
+      setNotes((current) => persistEditorNote(current, next));
+    } else {
+      setNotes((current) => current.map((note) => note.id === noteId
+        ? { ...note, photos: update(note.photos ?? []), timestamp: Date.now() } : note));
+    }
+  }
+
+  function activateDraft() {
+    if (session.kind === "draft") return true;
+    if (!commitSession()) return false;
+    editInputRef.current?.blur();
+    setSession({ kind: "draft" });
+    return true;
   }
 
   function focusDraft() {
-    setDraftFocusRequest((request) => request + 1);
+    if (activateDraft()) setDraftFocusRequest((request) => request + 1);
   }
 
   return {
     inputRef, editInputRef, selectedNoteId, setSelectedNoteId,
-    editingNoteId, setEditingNoteId, editingText, editingTimestamp, setEditingTimestamp,
-    focusedNoteId, setFocusedNoteId, activeEditor, setActiveEditor,
-    saveEditingNote, finishEditing, createNote, resumeEditing, changeEditingText, focusDraft,
+    editingNoteId, editingText, editorNotes,
+    focusedNoteId, setFocusedNoteId, activeEditor, stopEditing, activateDraft,
+    finishEditing, createNote, createFolderNote, resumeEditing, changeEditingText, changeEditingPhotos, focusDraft,
   };
 }

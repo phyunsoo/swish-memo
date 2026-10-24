@@ -1,4 +1,4 @@
-import { useEffect, useMemo, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, type ReactNode } from "react";
 import { Keyboard, ScrollView, StyleSheet, Text, View, type StyleProp, type ViewStyle } from "react-native";
 import { Gesture, GestureDetector, type NativeGesture } from "react-native-gesture-handler";
 import Animated, {
@@ -18,6 +18,8 @@ import { reorderTargetIndex, reorderDestinationOffset } from "@/lib/note-reorder
 import { useNoteDrag, resetDragState, updateMenuSelection, selectionFeedback, type DragOverlayState } from "@/hooks/use-note-drag";
 import { useNoteReorder, resetReorderState, updateReorderPosition, type ReorderDrag } from "@/hooks/use-note-reorder";
 import { NOTE_TEXT_SIZE } from "@/lib/note-typography";
+import { EditorViewportContext, useEditorViewport } from "@/hooks/use-editor-viewport";
+import { useNoteListResume } from "@/hooks/use-note-list-resume";
 
 export type { DragOverlayState } from "@/hooks/use-note-drag";
 type DragState = DragOverlayState;
@@ -277,7 +279,7 @@ function ReorderHandle({ noteId, nativeScroll, scrollRef, reorder, onDrop }: {
   );
 }
 
-export function DraggableNotes<T extends Note>({ notes, folders, renderNote, children, header, listStyle, detailNote, renderDetail, onDragState, paddingTop, paddingBottom, editing, reordering = false, onDrop, onReorder, searchTarget, keyboardInset = 0 }: {
+export function DraggableNotes<T extends Note>({ notes, folders, renderNote, children, header, listStyle, detailNote, renderDetail, onDragState, paddingTop, paddingBottom, editing, reordering = false, onDrop, onReorder, searchTarget, keyboardInset = 0, editorOverlayInset = 0 }: {
   notes: T[];
   folders: Folder[];
   renderNote: (note: T, reorderHandle?: ReactNode) => ReactNode;
@@ -295,6 +297,7 @@ export function DraggableNotes<T extends Note>({ notes, folders, renderNote, chi
   onReorder?: (ids: number[]) => void;
   keyboardInset?: number;
   searchTarget?: SearchScrollTarget | null;
+  editorOverlayInset?: number;
 }) {
   const {
     scrollRef, onScroll, scrollToSearchTarget, viewportHeight, contentHeight,
@@ -304,6 +307,10 @@ export function DraggableNotes<T extends Note>({ notes, folders, renderNote, chi
   const nativeScroll = useMemo(() => Gesture.Native(), []);
   const detailNativeScroll = useMemo(() => Gesture.Native(), []);
   const drag = useNoteDrag({ notes, folders, detailNote, paddingTop, paddingBottom });
+  const readOffset = useCallback(() => reorder.scrollOffset.get(), [reorder]);
+  const viewport = useEditorViewport({ viewportRef: rootRef, scrollRef, readOffset,
+    keyboardHeight: keyboardInset, topInset: paddingTop, bottomInset: editorOverlayInset });
+  useNoteListResume({ drag, reorder, scrollRef, contentHeight, viewportHeight, reveal: viewport.reveal });
 
   useEffect(() => {
     onDragState?.(drag);
@@ -317,39 +324,45 @@ export function DraggableNotes<T extends Note>({ notes, folders, renderNote, chi
     : content;
 
   return (
-    <Animated.View ref={rootRef} collapsable={false} style={[styles.container, { marginBottom: keyboardInset }]}>
-      <View style={styles.workspace}>
-        <View style={[styles.listPane, listStyle]}>
-          <GestureDetector gesture={nativeScroll}>
-            <Animated.ScrollView ref={scrollRef} style={styles.container}
-              contentInsetAdjustmentBehavior="never" keyboardShouldPersistTaps="handled"
-              automaticallyAdjustKeyboardInsets={false}
-              onScroll={onScroll} scrollEventThrottle={16}
-              onLayout={(event) => viewportHeight.set(event.nativeEvent.layout.height)}
-              onContentSizeChange={(_width, height) => {
-                contentHeight.set(height);
-                scrollToSearchTarget();
-              }}
-              removeClippedSubviews={false}
-              contentContainerStyle={{ flexGrow: 1, paddingTop, paddingBottom }}>
-              {header}
-              {notes.map((note, index) => (
-                <ReorderRow key={note.id} noteId={note.id} index={index} reordering={reordering} reorder={reorder}
-                  onLayout={(y, height) => registerLayout(note.id, y, height)}>
-                  {reordering ? renderNote(note, <ReorderHandle noteId={note.id} nativeScroll={nativeScroll}
-                    scrollRef={scrollRef} reorder={reorder} onDrop={finishReorder} />) : <DraggableRow note={note} drag={drag} nativeScroll={nativeScroll}
-                    rootRef={rootRef} paddingTop={paddingTop} paddingBottom={paddingBottom} folderCount={folders.length} disabled={editing} onDrop={onDrop}>
-                    {renderNote(note)}
-                  </DraggableRow>}
-                </ReorderRow>
-              ))}
-              <View>{children}</View>
-            </Animated.ScrollView>
-          </GestureDetector>
+    <EditorViewportContext.Provider value={viewport.context}>
+      <Animated.View ref={rootRef} collapsable={false} style={[styles.container, { marginBottom: keyboardInset }]}>
+        <View style={styles.workspace}>
+          <View style={[styles.listPane, listStyle]}>
+            <GestureDetector gesture={nativeScroll}>
+              <Animated.ScrollView ref={scrollRef} style={styles.container}
+                contentInsetAdjustmentBehavior="never" keyboardShouldPersistTaps="handled"
+                automaticallyAdjustKeyboardInsets={false}
+                onScroll={onScroll} scrollEventThrottle={16}
+                onLayout={(event) => {
+                  viewportHeight.set(event.nativeEvent.layout.height);
+                  viewport.reveal();
+                }}
+                onContentSizeChange={(_width, height) => {
+                  contentHeight.set(height);
+                  scrollToSearchTarget();
+                  viewport.reveal();
+                }}
+                removeClippedSubviews={false}
+                contentContainerStyle={{ flexGrow: 1, paddingTop, paddingBottom }}>
+                {header}
+                {notes.map((note, index) => (
+                  <ReorderRow key={note.id} noteId={note.id} index={index} reordering={reordering} reorder={reorder}
+                    onLayout={(y, height) => registerLayout(note.id, y, height)}>
+                    {reordering ? renderNote(note, <ReorderHandle noteId={note.id} nativeScroll={nativeScroll}
+                      scrollRef={scrollRef} reorder={reorder} onDrop={finishReorder} />) : <DraggableRow note={note} drag={drag} nativeScroll={nativeScroll}
+                      rootRef={rootRef} paddingTop={paddingTop} paddingBottom={paddingBottom} folderCount={folders.length} disabled={editing} onDrop={onDrop}>
+                      {renderNote(note)}
+                    </DraggableRow>}
+                  </ReorderRow>
+                ))}
+                <View>{children}</View>
+              </Animated.ScrollView>
+            </GestureDetector>
+          </View>
+          {renderDetail?.(detailNativeScroll, wrapDetailNote)}
         </View>
-        {renderDetail?.(detailNativeScroll, wrapDetailNote)}
-      </View>
-    </Animated.View>
+      </Animated.View>
+    </EditorViewportContext.Provider>
   );
 }
 

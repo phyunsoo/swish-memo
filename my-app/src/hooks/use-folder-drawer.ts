@@ -1,7 +1,7 @@
-import { useCallback, useState } from "react";
-import { Keyboard, useWindowDimensions } from "react-native";
+import { useCallback, useEffect, useState } from "react";
+import { AppState, Keyboard, useWindowDimensions } from "react-native";
 import { Gesture } from "react-native-gesture-handler";
-import { ReduceMotion, useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
+import { cancelAnimation, ReduceMotion, useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
 import { scheduleOnRN } from "react-native-worklets";
 
 const DRAWER_SPRING = { duration: 500, dampingRatio: 0.8, reduceMotion: ReduceMotion.System };
@@ -13,6 +13,26 @@ export function useFolderDrawer(enabled: boolean) {
   const progress = useSharedValue(0);
   const gestureStart = useSharedValue(0);
   const gestureAllowed = useSharedValue(false);
+  const transition = useSharedValue(0);
+
+  const reset = useCallback(() => {
+    transition.set(transition.get() + 1);
+    cancelAnimation(progress);
+    progress.set(0);
+    gestureStart.set(0);
+    gestureAllowed.set(false);
+    setVisible(false);
+  }, [transition, progress, gestureStart, gestureAllowed]);
+  useEffect(() => {
+    if (!enabled) {
+      const frame = requestAnimationFrame(reset);
+      return () => cancelAnimationFrame(frame);
+    }
+  }, [enabled, reset]);
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", reset);
+    return () => subscription.remove();
+  }, [reset]);
 
   const prepare = useCallback(() => {
     Keyboard.dismiss();
@@ -21,10 +41,12 @@ export function useFolderDrawer(enabled: boolean) {
 
   const settle = useCallback((open: boolean) => {
     "worklet";
+    const token = transition.get() + 1;
+    transition.set(token);
     progress.set(withSpring(open ? 1 : 0, DRAWER_SPRING, (finished) => {
-      if (finished && !open) scheduleOnRN(setVisible, false);
+      if (finished && !open && transition.get() === token) scheduleOnRN(setVisible, false);
     }));
-  }, [progress]);
+  }, [progress, transition]);
 
   const open = useCallback(() => {
     prepare();

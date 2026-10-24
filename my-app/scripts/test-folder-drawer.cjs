@@ -7,7 +7,7 @@ const compiled = ts.transpileModule(fs.readFileSync(path.join(__dirname, '../src
   compilerOptions: { module: ts.ModuleKind.CommonJS },
 }).outputText;
 
-function setup() {
+function setup(enabled = true) {
   const state = { visible: false, keyboardDismissals: 0, animations: [], values: [] };
   const handlers = {};
   const gesture = {};
@@ -20,15 +20,18 @@ function setup() {
   const mocks = {
     react: {
       useCallback: (callback) => callback,
+      useEffect: (callback) => { callback(); },
       useState: (initial) => [initial, (next) => { state.visible = next; }],
     },
     'react-native': {
       Keyboard: { dismiss: () => { state.keyboardDismissals++; } },
+      AppState: { addEventListener: (_name, callback) => { state.onAppState = callback; return { remove() {} }; } },
       useWindowDimensions: () => ({ width: 400 }),
     },
     'react-native-gesture-handler': { Gesture: { Pan: () => gesture } },
     'react-native-reanimated': {
       ReduceMotion: { System: 'system' },
+      cancelAnimation() {},
       useAnimatedStyle: (callback) => callback,
       useSharedValue: (initial) => {
         let value = initial;
@@ -48,7 +51,7 @@ function setup() {
     assert.ok(mocks[name], `Unexpected dependency: ${name}`);
     return mocks[name];
   }, loaded.exports, loaded);
-  const drawer = loaded.exports.useFolderDrawer(true);
+  const drawer = loaded.exports.useFolderDrawer(enabled);
   return { drawer, handlers, state };
 }
 
@@ -115,4 +118,25 @@ for (const [distance, velocity] of [[220, 0], [25, 600]]) {
   assert.equal(state.visible, false);
 }
 
-console.log('Folder drawer: tap dismissal, right swipes, flicks, left swipes and cancellation passed');
+// A stale close callback cannot hide a newly opened panel.
+{
+  const { drawer, state } = setup();
+  drawer.open();
+  drawer.close();
+  const oldClose = state.animations.at(-1);
+  drawer.open();
+  oldClose.finish(true);
+  assert.equal(state.visible, true);
+}
+// Backgrounding must reset both the panel and content translation, even mid-drag.
+{
+  const { handlers, state, drawer } = setup();
+  handlers.onStart({});
+  handlers.onUpdate({ translationX: 200 });
+  state.onAppState('background');
+  assert.equal(state.visible, false);
+  assert.deepEqual(drawer.contentStyle().transform, [{ translateX: 0 }]);
+  state.onAppState('active');
+  assert.deepEqual(drawer.contentStyle().transform, [{ translateX: 0 }]);
+}
+console.log('Folder drawer: dismissal, swipes, cancellation, stale callbacks and foreground recovery passed');

@@ -3,6 +3,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { GestureDetector, type NativeGesture } from "react-native-gesture-handler";
 import type { StoredNote } from "@/lib/local-store";
 import type { SearchScrollTarget } from "@/lib/note-search";
+import { EditorViewportContext, useEditorViewport } from "@/hooks/use-editor-viewport";
 
 /** Card previews keep the original long-press move and reorder gestures. */
 export function NoteListRow({ note, text = note.text, selected, isDark, onSelect, reorderHandle }: {
@@ -35,28 +36,40 @@ export function NoteListRow({ note, text = note.text, selected, isDark, onSelect
   );
 }
 
-export function NoteDetailPane({ children, isDark, topInset, bottomInset, searchTarget, nativeScroll }: {
+export function NoteDetailPane({ children, isDark, topInset, bottomInset, searchTarget, nativeScroll, keyboardHeight = 0, editorOverlayInset = 0 }: {
   children: ReactNode;
   isDark: boolean;
   topInset: number;
   bottomInset: number;
   searchTarget: SearchScrollTarget | null;
   nativeScroll: NativeGesture;
+  keyboardHeight?: number;
+  editorOverlayInset?: number;
 }) {
   const scrollRef = useRef<ScrollView>(null);
+  const viewportRef = useRef<View>(null);
+  const scrollOffset = useRef(0);
+  const readOffset = useCallback(() => scrollOffset.current, []);
+  const viewport = useEditorViewport({ viewportRef, scrollRef, readOffset,
+    keyboardHeight, topInset, bottomInset: editorOverlayInset });
   const scrollToMatch = useCallback(() => {
     if (searchTarget) scrollRef.current?.scrollTo({ y: Math.max(0, searchTarget.offset - 24), animated: true });
   }, [searchTarget]);
   useEffect(scrollToMatch, [scrollToMatch]);
   return (
-    <GestureDetector gesture={nativeScroll}>
-      <ScrollView ref={scrollRef} style={styles.detail}
-        keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets={false}
-        contentInsetAdjustmentBehavior="never" onContentSizeChange={scrollToMatch}
-        contentContainerStyle={{ flexGrow: 1, paddingTop: topInset, paddingBottom: bottomInset }}>
-        <View style={[styles.page, { backgroundColor: isDark ? "#111110" : "#FFFFFF" }]}>{children}</View>
-      </ScrollView>
-    </GestureDetector>
+    <EditorViewportContext.Provider value={viewport.context}>
+      <View ref={viewportRef} collapsable={false} style={styles.detail} onLayout={viewport.reveal}>
+      <GestureDetector gesture={nativeScroll}>
+        <ScrollView ref={scrollRef} style={styles.detail}
+          onScroll={(event) => { scrollOffset.current = event.nativeEvent.contentOffset.y; }} scrollEventThrottle={16}
+          keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets={false}
+          contentInsetAdjustmentBehavior="never" onContentSizeChange={() => { scrollToMatch(); viewport.reveal(); }}
+          contentContainerStyle={{ flexGrow: 1, paddingTop: topInset, paddingBottom: bottomInset }}>
+          <View style={[styles.page, { backgroundColor: isDark ? "#111110" : "#FFFFFF" }]}>{children}</View>
+        </ScrollView>
+      </GestureDetector>
+      </View>
+    </EditorViewportContext.Provider>
   );
 }
 

@@ -1,14 +1,16 @@
 import { Keyboard, StyleSheet, View } from "react-native";
 import { GlassButton, GLASS_BUTTON_SIZE } from "./glass-button";
+import { NativeCheckButton } from "./native-check-button";
 
 export const EDITOR_KEYBOARD_TOOLBAR_INSET = GLASS_BUTTON_SIZE + 24;
 
-export function EditorKeyboardToolbar({ visible, canAttachPhotos, keyboardHeight, isDark, onAttachPhotos }: {
+export function EditorKeyboardToolbar({ visible, canAttachPhotos, keyboardHeight, isDark, onAttachPhotos, onComplete }: {
   visible: boolean;
   canAttachPhotos: boolean;
   keyboardHeight: number;
   isDark: boolean;
   onAttachPhotos: () => void;
+  onComplete?: () => void;
 }) {
   if (!visible || keyboardHeight <= 0) return null;
   const colors = {
@@ -18,7 +20,10 @@ export function EditorKeyboardToolbar({ visible, canAttachPhotos, keyboardHeight
   return (
     <View pointerEvents="box-none" style={[styles.toolbar, { bottom: keyboardHeight }]}>
       <View>{canAttachPhotos && <GlassButton label="사진 첨부" symbol="paperclip" {...colors} onPress={onAttachPhotos} />}</View>
-      <GlassButton label="키보드 닫기" symbol="keyboard.chevron.compact.down" {...colors} onPress={Keyboard.dismiss} />
+      <View style={{ flexDirection: "row", gap: 8 }}>
+        {onComplete && <NativeCheckButton onPress={onComplete} />}
+        <GlassButton label="키보드 닫기" symbol="keyboard.chevron.compact.down" {...colors} onPress={Keyboard.dismiss} />
+      </View>
     </View>
   );
 }
